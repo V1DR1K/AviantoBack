@@ -60,6 +60,7 @@ public class ApiController {
   @GetMapping("/reportes/resumen") public List<ReportResponse> summary(){return api.summary();}
   @GetMapping("/reportes/evolucion") public List<ReportResponse> evolution(){return api.evolution();}
   @GetMapping("/reportes/top-items") public List<ReportResponse> topItems(){return api.topItems();}
+  @GetMapping("/dashboard") public DashboardResponse dashboard(@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta){return api.dashboard(fechaDesde,fechaHasta);}
 
   @GetMapping("/configuracion/marcas-moto") public List<NamedResponse> brands(@RequestParam(defaultValue="false")boolean includeDeleted){return api.brands(includeDeleted);}
   @PostMapping("/configuracion/marcas-moto") @ResponseStatus(HttpStatus.CREATED) public NamedResponse brand(@Valid @RequestBody NameRequest r){return api.createBrand(r);}
