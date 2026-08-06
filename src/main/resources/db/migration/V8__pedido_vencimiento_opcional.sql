@@ -1,0 +1,1 @@
+ALTER TABLE pedido ALTER COLUMN vencimiento DROP NOT NULL;
