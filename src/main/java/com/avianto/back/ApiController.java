@@ -52,8 +52,8 @@ public class ApiController {
   @PutMapping("/pedidos/{id}") public OrderResponse order(@PathVariable UUID id,@Valid @RequestBody OrderRequest r){return api.updateOrder(id,r);}
   @DeleteMapping("/pedidos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void orderDelete(@PathVariable UUID id){api.deleteOrder(id);}
   @PatchMapping("/pedidos/{id}/estado") public OrderResponse state(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.state(id,r);}
-  @PostMapping("/pedidos/{id}/duplicate") @ResponseStatus(HttpStatus.CREATED) public OrderResponse duplicate(@PathVariable UUID id){return api.duplicate(id);}
   @PostMapping("/pedidos/{id}/fotos") @ResponseStatus(HttpStatus.CREATED) public PhotoResponse photo(@PathVariable UUID id,@Valid @RequestBody PhotoRequest r){return api.photo(id,r);}
+  @GetMapping("/pedidos/{id}/fotos/{fotoId}") public ResponseEntity<byte[]> photo(@PathVariable UUID id,@PathVariable UUID fotoId){PedidoFoto photo=api.photo(id,fotoId);return ResponseEntity.ok().contentType(MediaType.parseMediaType(photo.contentType)).body(photo.content);}
   @GetMapping(value="/pedidos/{id}/pdf",produces=MediaType.APPLICATION_PDF_VALUE) public ResponseEntity<byte[]> pdf(@PathVariable UUID id)throws Exception{return attachment("pedido-"+id+".pdf",MediaType.APPLICATION_PDF,pdf(api.order(id)));}
 
   @GetMapping("/auditoria") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public List<AuditResponse> audit(@RequestParam(required=false)String q,@RequestParam(required=false)UUID usuarioId,@RequestParam(required=false)String modulo,@RequestParam(required=false)String accion,@RequestParam(required=false)Instant fechaDesde,@RequestParam(required=false)Instant fechaHasta){return api.audits(q,usuarioId,modulo,accion,fechaDesde,fechaHasta);}
