@@ -10,6 +10,7 @@ import org.springframework.http.*;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.*;
 import java.io.*;
+import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 import java.util.function.Function;
@@ -83,7 +84,7 @@ public class ApiController {
   @PostMapping("/fichas/{id}/revision/aprobar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public RevisionResponse aprobarRevision(@PathVariable UUID id,@Valid @RequestBody RevisionAprobarRequest r){return api.aprobarRevision(id,r);}
 
   // ---------- Pedidos de repuestos ----------
-  @GetMapping("/repuestos") public PageResponse<RepuestoResponse> repuestos(@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)String q,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.repuestos(estado,estadoPago,motoId,clienteId,q,includeDeleted,page,size,sortBy,direction);}
+  @GetMapping("/repuestos") public PageResponse<RepuestoResponse> repuestos(@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)String q,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.repuestos(estado,estadoPago,motoId,clienteId,q,fechaDesde,fechaHasta,includeDeleted,page,size,sortBy,direction);}
   @PostMapping("/repuestos") @ResponseStatus(HttpStatus.CREATED) public RepuestoResponse createRepuesto(@Valid @RequestBody RepuestoRequest r){return api.createRepuesto(r);}
   @GetMapping("/repuestos/{id}") public RepuestoResponse repuesto(@PathVariable UUID id){return api.repuesto(id);}
   @PutMapping("/repuestos/{id}") public RepuestoResponse updateRepuesto(@PathVariable UUID id,@Valid @RequestBody RepuestoRequest r){return api.updateRepuesto(id,r);}
@@ -127,10 +128,77 @@ public class ApiController {
   @GetMapping("/motovehiculos/export.xlsx") public ResponseEntity<byte[]> motoExport(@RequestParam(required=false)String q,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)UUID marcaId,@RequestParam(required=false)Boolean activo,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("motovehiculos",all(n->api.motorcycles(q,clienteId,marcaId,null,activo,includeDeleted,n,100,sortBy,direction).content()),columns);}
   @GetMapping("/catalogo-items/export.xlsx") public ResponseEntity<byte[]> catalogExport(@RequestParam(required=false)String q,@RequestParam(required=false)ItemType tipo,@RequestParam(required=false)UUID categoriaId,@RequestParam(required=false)Boolean activo,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="descripcion")String sortBy,@RequestParam(defaultValue="ASC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("catalogo",all(n->api.catalog(q,tipo,categoriaId,activo,includeDeleted,n,100,sortBy,direction).content()),columns);}
   @GetMapping("/fichas/export.xlsx") public ResponseEntity<byte[]> fichasExport(@RequestParam(required=false)String q,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="fechaIngreso")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("fichas",all(n->api.fichas(q,clienteId,motoId,null,estado,estadoPago,fechaDesde,fechaHasta,includeDeleted,n,100,sortBy,direction).content()),columns);}
-  @GetMapping("/repuestos/export.xlsx") public ResponseEntity<byte[]> repuestosExport(@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)UUID clienteId,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("repuestos",all(n->api.repuestos(estado,estadoPago,motoId,clienteId,null,includeDeleted,n,100,sortBy,direction).content()),columns);}
+  @GetMapping("/repuestos/export.xlsx") public ResponseEntity<byte[]> repuestosExport(@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("repuestos",all(n->api.repuestos(estado,estadoPago,motoId,clienteId,null,fechaDesde,fechaHasta,includeDeleted,n,100,sortBy,direction).content()),columns);}
 
   private <T> List<T> all(Function<Integer,List<T>> get){List<T> r=new ArrayList<>();for(int p=0;;p++){List<T> part=get.apply(p);r.addAll(part);if(part.size()<100)return r;}}
-  private ResponseEntity<byte[]> excel(String name,List<?> rows,String columns)throws Exception{List<String> fields=columns==null||columns.isBlank()?List.of():Arrays.stream(columns.split(",")).map(String::trim).toList();try(XSSFWorkbook wb=new XSSFWorkbook();ByteArrayOutputStream out=new ByteArrayOutputStream()){var sheet=wb.createSheet(name);var generated=sheet.createRow(0);generated.createCell(0).setCellValue("Generado: "+Instant.now());if(!rows.isEmpty()){var components=rows.getFirst().getClass().getRecordComponents();if(fields.isEmpty())fields=Arrays.stream(components).map(x->x.getName()).toList();var header=sheet.createRow(1);for(int c=0;c<fields.size();c++)header.createCell(c).setCellValue(fields.get(c));for(int r=0;r<rows.size();r++){var row=sheet.createRow(r+2);for(int c=0;c<fields.size();c++){String f=fields.get(c);for(var component:components)if(component.getName().equals(f)){Object val=component.getAccessor().invoke(rows.get(r));row.createCell(c).setCellValue(val==null?"":String.valueOf(val));break;}}}for(int c=0;c<fields.size();c++)sheet.autoSizeColumn(c);}wb.write(out);return attachment(name+".xlsx",MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),out.toByteArray());}}
+  private ResponseEntity<byte[]> excel(String name,List<?> rows,String ignored)throws Exception{
+    record Col(String header,String kind,Function<Object,String> value){}
+    List<Col> cols;
+    switch(name){
+      case "clientes" -> cols=List.of(
+        new Col("Nombre","text",o->((ClientResponse)o).nombre()),
+        new Col("Documento","text",o->str(((ClientResponse)o).documento())),
+        new Col("Teléfono","text",o->str(((ClientResponse)o).telefono())),
+        new Col("Email","text",o->str(((ClientResponse)o).email())),
+        new Col("Dirección","text",o->str(((ClientResponse)o).direccion())),
+        new Col("Estado","text",o->((ClientResponse)o).activo()?"Activo":"Baja"),
+        new Col("Motos","number",o->String.valueOf(((ClientResponse)o).motos())));
+      case "motovehiculos" -> cols=List.of(
+        new Col("Patente","text",o->str(((MotorcycleResponse)o).patente())),
+        new Col("Marca","text",o->str(((MotorcycleResponse)o).marca())),
+        new Col("Modelo","text",o->str(((MotorcycleResponse)o).modelo())),
+        new Col("Cliente","text",o->str(((MotorcycleResponse)o).cliente())),
+        new Col("Año","number",o->((MotorcycleResponse)o).anio()==null?"":String.valueOf(((MotorcycleResponse)o).anio())),
+        new Col("Kilómetros","number",o->((MotorcycleResponse)o).kilometraje()==null?"":String.valueOf(((MotorcycleResponse)o).kilometraje())),
+        new Col("Estado","text",o->str(((MotorcycleResponse)o).estado())));
+      case "catalogo" -> cols=List.of(
+        new Col("Descripción","text",o->str(((CatalogResponse)o).descripcion())),
+        new Col("Tipo","text",o->String.valueOf(((CatalogResponse)o).tipo())),
+        new Col("Categoría","text",o->str(((CatalogResponse)o).categoria())),
+        new Col("Precio base","number",o->((CatalogResponse)o).precioBase()==null?"":((CatalogResponse)o).precioBase().toPlainString()),
+        new Col("Estado","text",o->((CatalogResponse)o).activo()?"Activo":"Baja"));
+      case "fichas" -> cols=List.of(
+        new Col("Número","text",o->str(((FichaResponse)o).numero())),
+        new Col("Cliente","text",o->str(((FichaResponse)o).cliente())),
+        new Col("Moto","text",o->str(((FichaResponse)o).moto())),
+        new Col("Patente","text",o->str(((FichaResponse)o).patente())),
+        new Col("Ingreso","date",o->dateVal(((FichaResponse)o).fechaIngreso())),
+        new Col("Entrega estimada","date",o->dateVal(((FichaResponse)o).fechaEntregaEstimada())),
+        new Col("Estado","text",o->str(((FichaResponse)o).estado())),
+        new Col("Pago","text",o->str(((FichaResponse)o).estadoPago())),
+        new Col("Total","number",o->((FichaResponse)o).total().toPlainString()),
+        new Col("Ítems","text",o->fichaItems(((FichaResponse)o).items())));
+      default -> cols=List.of(
+        new Col("Número","text",o->str(((RepuestoResponse)o).numero())),
+        new Col("Fecha","date",o->dateVal(((RepuestoResponse)o).fecha())),
+        new Col("Cliente","text",o->str(((RepuestoResponse)o).cliente())),
+        new Col("Patente","text",o->str(((RepuestoResponse)o).patente())),
+        new Col("Proveedor","text",o->str(((RepuestoResponse)o).proveedor())),
+        new Col("Estado","text",o->str(((RepuestoResponse)o).estado())),
+        new Col("Pago","text",o->str(((RepuestoResponse)o).estadoPago())),
+        new Col("Total","number",o->((RepuestoResponse)o).total().toPlainString()),
+        new Col("Ítems","text",o->repuestoItems(((RepuestoResponse)o).items())));
+    }
+    try(XSSFWorkbook wb=new XSSFWorkbook()){
+      var sheet=wb.createSheet(name);
+      var header=sheet.createRow(0);
+      for(int c=0;c<cols.size();c++)header.createCell(c).setCellValue(cols.get(c).header());
+      for(int r=0;r<rows.size();r++){
+        var row=sheet.createRow(r+1);
+        for(int c=0;c<cols.size();c++){
+          String v=cols.get(c).value().apply(rows.get(r));
+          if("number".equals(cols.get(c).kind())){try{row.createCell(c).setCellValue(Double.parseDouble(v.replace(',','.')));}catch(Exception e){row.createCell(c).setCellValue(v);}}
+          else row.createCell(c).setCellValue(v);
+        }
+      }
+      for(int c=0;c<cols.size();c++)sheet.autoSizeColumn(c);
+      try(ByteArrayOutputStream out=new ByteArrayOutputStream()){wb.write(out);return attachment(name+".xlsx",MediaType.parseMediaType("application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"),out.toByteArray());}
+    }}
+  private String str(String v){return v==null||v.isBlank()?"":v.trim();}
+  private String dateVal(LocalDate d){return d==null?"":d.toString();}
+  private String fichaItems(List<FichaItemResponse> items){if(items==null||items.isEmpty())return "";return String.join(" | ",items.stream().map(i->DecimalFormat(i.cantidad())+"x "+i.descripcion()).toList());}
+  private String repuestoItems(List<RepuestoItemResponse> items){if(items==null||items.isEmpty())return "—";return String.join(" | ",items.stream().map(i->DecimalFormat(i.cantidad())+"x "+i.descripcion()).toList());}
+  private String DecimalFormat(BigDecimal value){return value==null?"0":value.stripTrailingZeros().toPlainString();}
   private byte[] pdf(FichaResponse o)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();Document d=new Document();PdfWriter.getInstance(d,out);d.open();d.add(new Paragraph("AVIANTO - "+o.documento()));d.add(new Paragraph("Ficha: "+o.numero()+"    Estado: "+o.estado()+"    Pago: "+o.estadoPago()));d.add(new Paragraph("Cliente: "+o.cliente()+"    Moto: "+o.moto()+" ("+o.patente()+")"));d.add(new Paragraph("Ingreso: "+o.fechaIngreso()+"    Entrega estimada: "+o.fechaEntregaEstimada()+"    Vencimiento: "+o.vencimiento()));d.add(new Paragraph(" "));for(FichaItemResponse i:o.items())d.add(new Paragraph(i.descripcion()+" x"+i.cantidad()+"  $"+i.subtotal()));d.add(new Paragraph("TOTAL: $"+o.total()));d.close();return out.toByteArray();}
   private ResponseEntity<byte[]> attachment(String name,MediaType type,byte[] body){return ResponseEntity.ok().contentType(type).header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\""+name+"\"").body(body);}
 }

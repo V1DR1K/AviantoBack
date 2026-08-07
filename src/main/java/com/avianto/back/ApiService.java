@@ -361,7 +361,7 @@ public class ApiService {
   private PhotoResponse photo(UUID fichaId, PedidoFoto f) { return new PhotoResponse(f.id, f.filename, f.contentType, f.createdAt, "/fichas/" + fichaId + "/fotos/" + f.id); }
 
   // ---------- Pedidos de repuestos ----------
-  public PageResponse<RepuestoResponse> repuestos(String estado, String estadoPago, UUID motoId, UUID clienteId, String q, boolean deleted, int page, int size, String sort, String dir) {
+  public PageResponse<RepuestoResponse> repuestos(String estado, String estadoPago, UUID motoId, UUID clienteId, String q, LocalDate desde, LocalDate hasta, boolean deleted, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String w = " where 1=1" + active(deleted);
     if (estado != null && !estado.isBlank()) { w += " and e.estado=:s"; ps.put("s", RepuestoPedidoState.of(estado)); }
@@ -369,6 +369,8 @@ public class ApiService {
     if (motoId != null) { w += " and e.motovehiculo.id=:m"; ps.put("m", motoId); }
     if (clienteId != null) { w += " and e.cliente.id=:c"; ps.put("c", clienteId); }
     if (q != null && !q.isBlank()) { w += " and (lower(e.numero) like :q or lower(coalesce(e.proveedor,'')) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
+    if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
     return page("from PedidoRepuesto e join e.motovehiculo join e.cliente", w, "from PedidoRepuesto e", ps, page, size, sortable(sort, Set.of("fecha", "createdAt", "total", "estado"), "fecha"), dir, x -> repuesto((PedidoRepuesto) x));
   }
   public RepuestoResponse repuesto(UUID id) { return repuesto(db.get(PedidoRepuesto.class, id)); }
