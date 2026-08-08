@@ -152,7 +152,7 @@ public class ApiService {
     audit("Services", "REGISTRAR", m.patente + " km " + e.kilometraje);
     return service(e);
   }
-  private ServiceResponse service(ServiceMoto e) { return new ServiceResponse(e.id, e.motovehiculo.id, e.ficha == null ? null : e.ficha.id, e.kilometraje, e.fecha, e.observaciones, e.realizadoPor == null ? null : e.realizadoPor.nombre, e.createdAt); }
+  private ServiceResponse service(ServiceMoto e) { return new ServiceResponse(e.id, e.motovehiculo.id, e.ficha == null ? null : e.ficha.id, e.ficha == null ? null : e.ficha.numero, e.kilometraje, e.fecha, e.observaciones, e.realizadoPor == null ? null : e.realizadoPor.nombre, e.createdAt); }
   public List<NextServiceResponse> nextServices() {
     LocalDate h = today();
     return db.all("select e from Motovehiculo e join e.cliente join e.marca where e.deletedAt is null and e.activo=true order by e.patente", Motovehiculo.class, Map.of()).stream().map(m -> {

@@ -31,7 +31,7 @@ public final class ApiDtos {
   public record OwnerRequest(@NotNull UUID clienteId, LocalDate fechaDesde, String observaciones) {}
   public record OwnerResponse(UUID id, UUID clienteId, String cliente, LocalDate fechaDesde, LocalDate fechaHasta, boolean actual, String observaciones) {}
   public record ServiceRequest(UUID fichaId, @NotNull Integer kilometraje, LocalDate fecha, String observaciones) {}
-  public record ServiceResponse(UUID id, UUID motoId, UUID fichaId, Integer kilometraje, LocalDate fecha, String observaciones, String realizadoPor, Instant creadoEn) {}
+  public record ServiceResponse(UUID id, UUID motoId, UUID fichaId, String fichaNumero, Integer kilometraje, LocalDate fecha, String observaciones, String realizadoPor, Instant creadoEn) {}
   public record NextServiceResponse(UUID motoId, String patente, String cliente, String moto, Integer kilometraje, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, Integer proximKm, Integer kmFaltan, LocalDate proximaFecha, Long diasFaltan, boolean atrasadoKm, boolean atrasadoFecha, boolean sinReferencia) {}
   public record RepuestoItemRequest(@NotBlank String descripcion, @NotNull RepuestoItemType tipo, @NotNull @Positive @Digits(integer=12,fraction=0) BigDecimal cantidad, @NotNull @DecimalMin("0.00") BigDecimal precio, String estado, String observaciones) {}
   public record RepuestoItemResponse(UUID id, String descripcion, RepuestoItemType tipo, BigDecimal cantidad, BigDecimal precio, BigDecimal subtotal, String estado, String observaciones) {}
