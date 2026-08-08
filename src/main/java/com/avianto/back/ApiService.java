@@ -538,4 +538,12 @@ PropietarioMoto o = propietarioActual(m.id);
     List<TallerEstadoResponse> estados = Arrays.stream(FichaState.values()).map(s -> new TallerEstadoResponse(s.label(), buckets.getOrDefault(s, List.of()).stream().limit(100).toList())).toList();
     return new TallerResponse(estados);
   }
+  public DashboardFichasResponse dashboardFichas() {
+    Map<FichaState, List<DashboardFichaResponse>> buckets = new EnumMap<>(FichaState.class);
+    for (Ficha f : db.all("select f from Ficha f where f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of())) {
+      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new DashboardFichaResponse(f.id, f.numero, f.cliente.nombre, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.motovehiculo.patente, f.estado.label(), f.total, f.fechaIngreso));
+    }
+    List<DashboardFichaEstadoResponse> estados = Arrays.stream(FichaState.values()).map(s -> new DashboardFichaEstadoResponse(s.label(), buckets.getOrDefault(s, List.of()).stream().limit(100).toList())).toList();
+    return new DashboardFichasResponse(estados);
+  }
 }

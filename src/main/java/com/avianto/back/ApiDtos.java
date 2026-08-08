@@ -49,6 +49,9 @@ public final class ApiDtos {
   public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso) {}
   public record TallerEstadoResponse(String estado, List<TallerMotoResponse> motos) {}
   public record TallerResponse(List<TallerEstadoResponse> estados) {}
+  public record DashboardFichaResponse(UUID id, String numero, String cliente, String moto, String patente, String estado, BigDecimal total, LocalDate fechaIngreso) {}
+  public record DashboardFichaEstadoResponse(String estado, List<DashboardFichaResponse> fichas) {}
+  public record DashboardFichasResponse(List<DashboardFichaEstadoResponse> estados) {}
   public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
   public record RefreshRequest(@NotBlank String refreshToken) {}
   public record SessionResponse(String accessToken, String refreshToken, UserResponse user) {}
