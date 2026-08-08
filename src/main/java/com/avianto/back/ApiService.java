@@ -76,6 +76,11 @@ public class ApiService {
     if (brandId != null) { w += " and e.marca.id=:brand"; ps.put("brand", brandId); }
     if (estado != null && !estado.isBlank()) {
       if (estado.equalsIgnoreCase("En taller") || estado.equalsIgnoreCase("REPARACION")) w += " and e.id in (select f.motovehiculo.id from Ficha f where f.deletedAt is null and f.estado <> com.avianto.back.FichaState.ENTREGADA and f.estado <> com.avianto.back.FichaState.CANCELADA)";
+      else {
+        List<UUID> ids = motosEnEstado(FichaState.of(estado));
+        if (ids.isEmpty()) return new PageResponse<>(List.of(), page, size, 0, 0, sortable(sort, Set.of("modelo", "patente", "kilometraje", "createdAt", "updatedAt"), "patente"), dirOf(dir));
+        w += " and e.id in :ids"; ps.put("ids", ids);
+      }
     }
     if (activo != null) { w += " and e.activo=:activo"; ps.put("activo", activo); }
     return page("from Motovehiculo e join e.marca", w, "from Motovehiculo e", ps, page, size, sortable(sort, Set.of("modelo", "patente", "kilometraje", "createdAt", "updatedAt"), "patente"), dir, x -> moto((Motovehiculo) x));
@@ -105,8 +110,19 @@ public class ApiService {
   }
   private MotorcycleResponse moto(Motovehiculo e) {
     PropietarioMoto o = propietarioActual(e.id);
-    String estado = db.count("select count(f) from Ficha f where f.motovehiculo.id=:id and f.deletedAt is null and f.estado<>com.avianto.back.FichaState.ENTREGADA and f.estado<>com.avianto.back.FichaState.CANCELADA", Map.of("id", e.id)) > 0 ? "En taller" : "Disponible";
-    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, estado, e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
+    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, estadoMoto(e.id), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
+  }
+  String estadoMoto(UUID motoId) {
+    Ficha f = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", motoId));
+    return f == null ? "Disponible" : f.estado.label();
+  }
+  private List<UUID> motosEnEstado(FichaState estado) {
+    Set<UUID> pick = new HashSet<>(); List<UUID> ids = new ArrayList<>();
+    for (Ficha f : db.all("select f from Ficha f where f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of())) {
+      if (!pick.add(f.motovehiculo.id)) continue;
+      if (f.estado == estado) ids.add(f.motovehiculo.id);
+    }
+    return ids;
   }
   private PropietarioMoto propietarioActual(UUID motoId) { return db.one("select p from PropietarioMoto p where p.motovehiculo.id=:moto and p.fechaHasta is null and p.deletedAt is null", PropietarioMoto.class, Map.of("moto", motoId)); }
   @Cacheable(value = "autocomplete", key = "'motorcycles:' + #q") public List<AutocompleteResponse> motorcycleAutocomplete(String q) {
@@ -509,14 +525,17 @@ PropietarioMoto o = propietarioActual(m.id);
     Map<String,Object> ps = Map.of("desde", desde, "hasta", hasta);
     String wFicha = " WHERE e.deletedAt IS NULL AND e.fechaIngreso BETWEEN :desde AND :hasta";
     long fichas = db.count("SELECT COUNT(e) FROM Ficha e" + wFicha, ps);
-    long enProceso = db.count("SELECT COUNT(e) FROM Ficha e" + wFicha + " AND e.estado IN ('CARGA','EN_PROCESO')", ps);
-    long enRevision = db.count("SELECT COUNT(e) FROM Ficha e" + wFicha + " AND e.estado='REVISION'", ps);
-    long pagadas = db.count("SELECT COUNT(e) FROM Ficha e" + wFicha + " AND e.estadoPago='PAGADO'", ps);
-    long canceladas = db.count("SELECT COUNT(e) FROM Ficha e" + wFicha + " AND e.estado='CANCELADA'", ps);
-    BigDecimal presupuestado = suma("SELECT COALESCE(SUM(e.total),0) FROM Ficha e" + wFicha, ps);
-    BigDecimal facturado = suma("SELECT COALESCE(SUM(e.total),0) FROM Ficha e" + wFicha + " AND e.estadoPago='PAGADO'", ps);
-    List<DashboardDayResponse> evolucion = db.all("SELECT e.fechaIngreso, COALESCE(SUM(e.total),0) FROM Ficha e" + wFicha + " GROUP BY e.fechaIngreso ORDER BY e.fechaIngreso", Object[].class, ps).stream().map(row -> new DashboardDayResponse((LocalDate) row[0], money((BigDecimal) row[1]))).toList();
-    List<DashboardOrderResponse> recientes = db.list("SELECT e FROM Ficha e WHERE e.deletedAt IS NULL ORDER BY e.createdAt DESC", Ficha.class, Map.of(), 0, 12).stream().map(e -> new DashboardOrderResponse(e.id, e.numero, e.cliente.nombre, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.estado.name(), e.total, e.createdAt)).toList();
-    return new DashboardResponse(desde, hasta, fichas, enProceso, enRevision, pagadas, canceladas, presupuestado, facturado, evolucion, recientes);
+    List<DashboardOrderResponse> recientes = db.list("SELECT e FROM Ficha e" + wFicha + " ORDER BY e.fechaIngreso DESC, e.createdAt DESC", Ficha.class, ps, 0, 12).stream().map(e -> new DashboardOrderResponse(e.id, e.numero, e.cliente.nombre, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.estado.label(), e.total, e.createdAt)).toList();
+    return new DashboardResponse(desde, hasta, fichas, recientes);
+  }
+  public TallerResponse taller() {
+    Map<FichaState, List<TallerMotoResponse>> buckets = new EnumMap<>(FichaState.class);
+    Set<UUID> pick = new HashSet<>();
+    for (Ficha f : db.all("select f from Ficha f where f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of())) {
+      if (!pick.add(f.motovehiculo.id)) continue;
+      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new TallerMotoResponse(f.motovehiculo.id, f.motovehiculo.patente, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.cliente.nombre, f.motovehiculo.kilometraje, f.id, f.numero, f.estado.label(), f.fechaIngreso));
+    }
+    List<TallerEstadoResponse> estados = Arrays.stream(FichaState.values()).map(s -> new TallerEstadoResponse(s.label(), buckets.getOrDefault(s, List.of()).stream().limit(100).toList())).toList();
+    return new TallerResponse(estados);
   }
 }

@@ -44,9 +44,11 @@ public final class ApiDtos {
   public record AutocompleteResponse(UUID id, String label, String secondary) {}
   public record AuditResponse(UUID id, Instant fecha, String usuario, String modulo, String accion, String descripcion) {}
   public record ReportResponse(String etiqueta, BigDecimal valor) {}
-  public record DashboardDayResponse(LocalDate fecha, BigDecimal total) {}
   public record DashboardOrderResponse(UUID id, String numero, String cliente, String moto, String estado, BigDecimal total, Instant createdAt) {}
-  public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, long enProceso, long enRevision, long pagadas, long canceladas, BigDecimal presupuestado, BigDecimal facturado, List<DashboardDayResponse> evolucion, List<DashboardOrderResponse> recientes) {}
+  public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, List<DashboardOrderResponse> recientes) {}
+  public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso) {}
+  public record TallerEstadoResponse(String estado, List<TallerMotoResponse> motos) {}
+  public record TallerResponse(List<TallerEstadoResponse> estados) {}
   public record LoginRequest(@NotBlank String username, @NotBlank String password) {}
   public record RefreshRequest(@NotBlank String refreshToken) {}
   public record SessionResponse(String accessToken, String refreshToken, UserResponse user) {}

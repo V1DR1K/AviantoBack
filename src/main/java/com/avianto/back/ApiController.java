@@ -91,6 +91,7 @@ public class ApiController {
   @GetMapping("/reportes/resumen") public List<ReportResponse> summary(){return api.summary();}
   @GetMapping("/reportes/evolucion") public List<ReportResponse> evolution(){return api.evolution();}
   @GetMapping("/dashboard") public DashboardResponse dashboard(@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta){return api.dashboard(fechaDesde,fechaHasta);}
+  @GetMapping("/dashboard/taller") public TallerResponse taller(){return api.taller();}
 
   // ---------- Configuración ----------
   @GetMapping("/configuracion/controles") public List<ControlResponse> controls(@RequestParam(defaultValue="false")boolean includeDeleted){return api.controls(includeDeleted);}
