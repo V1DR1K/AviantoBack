@@ -17,7 +17,7 @@ public final class ApiDtos {
   public record UserResponse(UUID id, String nombre, String email, Role rol, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotorcycleRequest(UUID clienteId, @NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones) {}
   public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
-  public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, @NotBlank String clienteNombre, @NotBlank String clienteTelefono) {}
+  public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteTelefono) {}
   public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotoConfigServiceRequest(@PositiveOrZero Integer kmServicePeriodo, @PositiveOrZero Integer mesesServicePeriodo, String serviceObservaciones) {}
   public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) {}
@@ -41,7 +41,7 @@ public final class ApiDtos {
   public record ControlResponse(UUID id, String nombre, String descripcion, boolean obligatorio, int orden, boolean activo, List<NamedResponse> categorias, Instant createdAt, Instant updatedAt) {}
   public record RevisionControlRequest(String estado, String observacion, String correccionNecesaria) {}
   public record RevisionControlResponse(UUID id, UUID controlId, String control, String categorias, boolean obligatorio, int orden, String estado, String observacion, String correccionNecesaria, String revisadoPor, Instant revisadoAt) {}
-  public record RevisionAprobarRequest(boolean forzada, String observacion) {}
+  public record RevisionAprobarRequest(boolean forzada, String observacion, List<UUID> serviceIds) {}
   public record RevisionResponse(UUID id, UUID fichaId, String ficha, String estado, String aprobadoPor, Instant aprobadoAt, boolean forzada, String observacion, List<RevisionControlResponse> controles) {}
   public record AutocompleteResponse(UUID id, String label, String secondary) {}
   public record AuditResponse(UUID id, Instant fecha, String usuario, String modulo, String accion, String descripcion) {}

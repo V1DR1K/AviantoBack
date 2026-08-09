@@ -102,7 +102,16 @@ public class ApiService {
   }
   public ProfileResponse profile(UUID id) { return profile(db.get(Motovehiculo.class, id)); }
   public ProfileResponse createProfile(ProfileRequest r) {
-    ClientResponse client = createClient(new ClientRequest(r.clienteNombre(), null, r.clienteTelefono(), null, null, null));
+    if (r.clienteId() != null && (blank(r.clienteNombre()) != null || blank(r.clienteTelefono()) != null)) throw new BusinessException(400, "Elegí un cliente existente o cargá uno nuevo");
+    ClientResponse client;
+    if (r.clienteId() != null) {
+      Cliente existing = db.get(Cliente.class, r.clienteId());
+      if (!existing.activo || existing.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
+      client = client(existing);
+    } else {
+      if (blank(r.clienteNombre()) == null || blank(r.clienteTelefono()) == null) throw new BusinessException(400, "Ingresá el nombre y teléfono del cliente");
+      client = createClient(new ClientRequest(r.clienteNombre(), null, r.clienteTelefono(), null, null, null));
+    }
     MotorcycleResponse moto = createMotorcycle(new MotorcycleRequest(client.id(), r.marcaId(), r.modelo(), r.patente(), r.anio(), r.kilometraje(), r.observaciones()));
     audit("Perfiles", "CREAR", moto.patente());
     return profile(db.get(Motovehiculo.class, moto.id()));
@@ -324,13 +333,16 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   public FichaResponse trabajoState(UUID id, UUID trabajoId, StateRequest r) {
     Ficha e = db.get(Ficha.class, id);
+    assertEditable(e);
     FichaTrabajo target = e.trabajos.stream().filter(x -> x.id.equals(trabajoId)).findFirst().orElseThrow(() -> new NotFoundException("El trabajo no existe"));
     TrabajoState next = TrabajoState.of(r.estado());
-    if (target.estadoTrabajo == TrabajoState.REALIZADO || target.estadoTrabajo == TrabajoState.CANCELADO) throw new BusinessException(422, "Trabajo finalizado");
+    if (target.estadoTrabajo == TrabajoState.CANCELADO) throw new BusinessException(422, "Trabajo cancelado");
     target.estadoTrabajo = next;
     if (next == TrabajoState.REALIZADO) { target.completadoAt = Instant.now(); target.completadoPor = actorId(); }
+    else { target.completadoAt = null; target.completadoPor = null; }
+    if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) e.estado = FichaState.EN_PROCESO;
     audit("Fichas", "TRABAJO ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
-    if ((next == TrabajoState.REALIZADO || next == TrabajoState.CANCELADO) && (e.estado == FichaState.CARGA || e.estado == FichaState.EN_PROCESO) && trabajosFinalizados(e)) e.estado = FichaState.REVISION;
+    if ((next == TrabajoState.REALIZADO || next == TrabajoState.CANCELADO) && e.estado == FichaState.EN_PROCESO && trabajosFinalizados(e)) e.estado = FichaState.REVISION;
     return ficha(e);
   }
 
@@ -516,14 +528,17 @@ PropietarioMoto o = propietarioActual(m.id);
     Revision rev = revisionEntity(fichaId);
     if (rev.estado == RevisionState.APROBADA) throw new BusinessException(409, "La revisión ya fue aprobada");
     if (rev.ficha.estado != FichaState.REVISION || !trabajosFinalizados(rev.ficha)) throw new BusinessException(422, "La ficha debe tener todos los trabajos finalizados y estar en revisión");
-    boolean pendOblig = rev.controles.stream().anyMatch(c -> c.control.obligatorio && c.estado == RevisionControlState.PENDIENTE);
-    if (pendOblig && !r.forzada()) throw new BusinessException(422, "Faltan controles obligatorios por revisar");
-    if (r.forzada() && blank(r.observacion()) == null) throw new BusinessException(422, "Una aprobación forzada requiere una observación");
-    rev.estado = RevisionState.APROBADA; rev.aprobadoPor = actor(); rev.aprobadoAt = Instant.now(); rev.forzada = r.forzada(); rev.observacion = blank(r.observacion());
+    if (rev.controles.stream().anyMatch(c -> c.estado == RevisionControlState.PENDIENTE)) throw new BusinessException(422, "Faltan controles por revisar");
+    rev.estado = RevisionState.APROBADA; rev.aprobadoPor = actor(); rev.aprobadoAt = Instant.now(); rev.forzada = false; rev.observacion = null;
     Ficha f = rev.ficha;
+    if (r.serviceIds() != null) for (UUID serviceId : new LinkedHashSet<>(r.serviceIds())) {
+      ServiceMoto service = db.get(ServiceMoto.class, serviceId);
+      if (!service.motovehiculo.id.equals(f.motovehiculo.id) || service.ficha != null) throw new BusinessException(422, "El service no puede asociarse a esta ficha");
+      service.ficha = f;
+    }
     if (f.estado != FichaState.ENTREGADA && f.estado != FichaState.CANCELADA) { f.estado = FichaState.ENTREGADA; }
     if (f.fechaEntregaReal == null) f.fechaEntregaReal = today();
-    audit("REVISION", "APROBAR", f.numero + (rev.forzada ? " (forzada)" : ""));
+    audit("REVISION", "APROBAR", f.numero);
     return revisionDto(rev);
   }
   private Revision revisionEntity(UUID fichaId) {
