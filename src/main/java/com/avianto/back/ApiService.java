@@ -30,6 +30,7 @@ public class ApiService {
   private String sortable(String requested, Set<String> allowed, String fallback) { return allowed.contains(requested) ? requested : fallback; }
   private static BigDecimal money(BigDecimal value) { return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP); }
   private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
+  private static String plateKey(String value) { return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(); }
   private static LocalDate today() { return LocalDate.now(ZoneId.of("America/Argentina/Buenos_Aires")); }
 
   private <T> PageResponse<T> page(String from, String where, String countFrom, Map<String,Object> ps, int pageId, int size, String sort, String dir, Function<Object,T> mapper) {
@@ -86,6 +87,26 @@ public class ApiService {
     return page("from Motovehiculo e join e.marca", w, "from Motovehiculo e", ps, page, size, sortable(sort, Set.of("modelo", "patente", "kilometraje", "createdAt", "updatedAt"), "patente"), dir, x -> moto((Motovehiculo) x));
   }
   public MotorcycleResponse moto(UUID id) { return moto(db.get(Motovehiculo.class, id)); }
+  public PageResponse<ProfileResponse> profiles(String q, String estado, int page, int size, String sort, String dir) {
+    if (page < 0 || !(size == 10 || size == 20 || size == 50 || size == 100)) throw new BusinessException(400, "Paginación inválida");
+    String query = q == null ? "" : q.trim().toLowerCase();
+    String plate = plateKey(q);
+    List<ProfileResponse> all = db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true order by e.patente", Motovehiculo.class, Map.of()).stream()
+      .map(this::profile)
+      .filter(item -> query.isBlank() || plateKey(item.patente()).contains(plate) || item.modelo().toLowerCase().contains(query) || (item.propietario() != null && item.propietario().toLowerCase().contains(query)))
+      .filter(item -> estado == null || estado.isBlank() || item.estado().equalsIgnoreCase(estado))
+      .toList();
+    int from = Math.min(page * size, all.size());
+    int to = Math.min(from + size, all.size());
+    return new PageResponse<>(all.subList(from, to), page, size, all.size(), (int) Math.ceil(all.size() / (double) size), "patente", "ASC");
+  }
+  public ProfileResponse profile(UUID id) { return profile(db.get(Motovehiculo.class, id)); }
+  public ProfileResponse createProfile(ProfileRequest r) {
+    ClientResponse client = createClient(new ClientRequest(r.clienteNombre(), null, r.clienteTelefono(), null, null, null));
+    MotorcycleResponse moto = createMotorcycle(new MotorcycleRequest(client.id(), r.marcaId(), r.modelo(), r.patente(), r.anio(), r.kilometraje(), r.observaciones()));
+    audit("Perfiles", "CREAR", moto.patente());
+    return profile(db.get(Motovehiculo.class, moto.id()));
+  }
   public MotorcycleResponse createMotorcycle(MotorcycleRequest r) {
     Motovehiculo e = new Motovehiculo(); copy(r, e); db.persist(e);
     if (r.clienteId() != null) addOwner(e.id, new OwnerRequest(r.clienteId(), today(), null));
@@ -112,9 +133,14 @@ public class ApiService {
     PropietarioMoto o = propietarioActual(e.id);
     return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, estadoMoto(e.id), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
   }
+  private ProfileResponse profile(Motovehiculo e) {
+    PropietarioMoto o = propietarioActual(e.id);
+    return new ProfileResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, estadoMoto(e.id), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
+  }
   String estadoMoto(UUID motoId) {
-    Ficha f = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", motoId));
-    return f == null ? "Disponible" : f.estado.label();
+    Ficha f = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null and f.estado <> com.avianto.back.FichaState.CANCELADA order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", motoId));
+    if (f == null) return "Disponible";
+    return f.estado == FichaState.CARGA ? "Ingresada" : f.estado.label();
   }
   private List<UUID> motosEnEstado(FichaState estado) {
     Set<UUID> pick = new HashSet<>(); List<UUID> ids = new ArrayList<>();

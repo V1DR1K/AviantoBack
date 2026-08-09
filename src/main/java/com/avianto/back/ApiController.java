@@ -41,6 +41,11 @@ public class ApiController {
   @DeleteMapping("/motovehiculos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void motoDelete(@PathVariable UUID id){api.deleteMotorcycle(id);}
   @PatchMapping("/motovehiculos/{id}/config-service") public MotorcycleResponse motoConfig(@PathVariable UUID id,@Valid @RequestBody MotoConfigServiceRequest r){return api.updateMotoConfig(id,r);}
 
+  // ---------- Perfiles (una vista integral por moto) ----------
+  @GetMapping("/perfiles") public PageResponse<ProfileResponse> profiles(@RequestParam(required=false)String q,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction){return api.profiles(q,estado,page,size,sortBy,direction);}
+  @PostMapping("/perfiles") @ResponseStatus(HttpStatus.CREATED) public ProfileResponse createProfile(@Valid @RequestBody ProfileRequest r){return api.createProfile(r);}
+  @GetMapping("/perfiles/{id}") public ProfileResponse profile(@PathVariable UUID id){return api.profile(id);}
+
   // ---------- Propietarios ----------
   @GetMapping("/motovehiculos/{id}/propietarios") public List<OwnerResponse> owners(@PathVariable UUID id){return api.owners(id);}
   @PostMapping("/motovehiculos/{id}/propietarios") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public OwnerResponse addOwner(@PathVariable UUID id,@Valid @RequestBody OwnerRequest r){return api.addOwner(id,r);}
