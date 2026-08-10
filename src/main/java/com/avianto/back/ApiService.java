@@ -210,6 +210,61 @@ public class ApiService {
     clearAutocomplete();
     return transfer(e);
   }
+  public TransferResponse updateTransfer(UUID id, TransferUpdateRequest r) {
+    TransferenciaMoto e = db.get(TransferenciaMoto.class, id);
+    if (e.deletedAt != null) throw new NotFoundException("TransferenciaMoto inexistente");
+    Cliente nuevo = db.get(Cliente.class, r.clienteNuevoId());
+    if (!nuevo.activo || nuevo.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
+    if (r.fechaTransferencia().isAfter(today())) throw new BusinessException(422, "La fecha no puede ser futura");
+    e.clienteNuevo = nuevo;
+    e.fechaTransferencia = r.fechaTransferencia();
+    e.observaciones = blank(r.observaciones());
+    rebuildOwnership(e.motovehiculo.id);
+    audit("Transferencias", "EDITAR", e.motovehiculo.patente + " · " + e.clienteNuevo.nombre);
+    clearAutocomplete();
+    return transfer(e);
+  }
+  public void deleteTransfer(UUID id) {
+    TransferenciaMoto e = db.get(TransferenciaMoto.class, id);
+    if (e.deletedAt != null) throw new NotFoundException("TransferenciaMoto inexistente");
+    String description = e.motovehiculo.patente + " · " + e.clienteAnterior.nombre + " -> " + e.clienteNuevo.nombre;
+    UUID motoId = e.motovehiculo.id;
+    deleted(e);
+    rebuildOwnership(motoId);
+    audit("Transferencias", "ELIMINAR", description);
+    clearAutocomplete();
+  }
+  private void rebuildOwnership(UUID motoId) {
+    List<PropietarioMoto> owners = db.all("select e from PropietarioMoto e join e.cliente where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaDesde asc, e.createdAt asc", PropietarioMoto.class, Map.of("moto", motoId));
+    if (owners.isEmpty()) throw new BusinessException(409, "La moto no tiene historial de propietarios");
+    PropietarioMoto initial = owners.get(0);
+    if (initial.fechaDesde == null) throw new BusinessException(409, "El historial de propietarios no tiene fecha de inicio");
+    List<TransferenciaMoto> transfers = db.all("select e from TransferenciaMoto e join e.clienteAnterior join e.clienteNuevo where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaTransferencia asc, e.createdAt asc", TransferenciaMoto.class, Map.of("moto", motoId));
+    Cliente previous = initial.cliente;
+    LocalDate previousDate = initial.fechaDesde;
+    for (TransferenciaMoto event : transfers) {
+      if (!event.fechaTransferencia.isAfter(previousDate)) throw new BusinessException(422, "Las fechas de transferencia deben ser posteriores y únicas");
+      if (event.clienteNuevo.id.equals(previous.id)) throw new BusinessException(409, "El cliente ya es el propietario anterior");
+      previous = event.clienteNuevo;
+      previousDate = event.fechaTransferencia;
+    }
+    for (PropietarioMoto owner : owners.subList(1, owners.size())) deleted(owner);
+    initial.fechaHasta = transfers.isEmpty() ? null : transfers.get(0).fechaTransferencia.minusDays(1);
+    db.flush();
+    previous = initial.cliente;
+    for (int i = 0; i < transfers.size(); i++) {
+      TransferenciaMoto event = transfers.get(i);
+      event.clienteAnterior = previous;
+      PropietarioMoto owner = new PropietarioMoto();
+      owner.motovehiculo = event.motovehiculo;
+      owner.cliente = event.clienteNuevo;
+      owner.fechaDesde = event.fechaTransferencia;
+      owner.fechaHasta = i + 1 < transfers.size() ? transfers.get(i + 1).fechaTransferencia.minusDays(1) : null;
+      owner.observaciones = event.observaciones;
+      db.persist(owner);
+      previous = event.clienteNuevo;
+    }
+  }
   private OwnerResponse owner(PropietarioMoto e) { return new OwnerResponse(e.id, e.cliente.id, e.cliente.nombre, e.fechaDesde, e.fechaHasta, e.fechaHasta == null, e.observaciones); }
   private TransferResponse transfer(TransferenciaMoto e) { return new TransferResponse(e.id, e.motovehiculo.id, e.motovehiculo.patente, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.clienteAnterior.id, e.clienteAnterior.nombre, e.clienteNuevo.id, e.clienteNuevo.nombre, e.fechaTransferencia, e.observaciones, e.realizadaPor == null ? null : e.realizadaPor.nombre, e.createdAt); }
 

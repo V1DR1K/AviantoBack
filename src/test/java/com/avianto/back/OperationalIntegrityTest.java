@@ -3,6 +3,8 @@ package com.avianto.back;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import java.math.BigDecimal;
@@ -97,6 +99,48 @@ class OperationalIntegrityTest {
 
     assertThrows(BusinessException.class, () -> api.createTransfer(new ApiDtos.TransferRequest(motoId, clientId, LocalDate.now(), null)));
     assertThrows(BusinessException.class, () -> api.createTransfer(new ApiDtos.TransferRequest(motoId, UUID.randomUUID(), LocalDate.now().plusDays(1), null)));
+  }
+
+  @Test
+  void editingTransferRebuildsTheOwnerPeriods() {
+    UUID motoId = UUID.randomUUID(), transferId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
+    LocalDate initialDate = LocalDate.now().minusDays(10), oldTransferDate = LocalDate.now().minusDays(2), newTransferDate = LocalDate.now().minusDays(3);
+    Motovehiculo moto = moto(motoId); moto.patente = "AA123AA"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand; Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId); newClient.nombre = "Nuevo cliente";
+    PropietarioMoto initial = new PropietarioMoto(); initial.motovehiculo = moto; initial.cliente = oldClient; initial.fechaDesde = initialDate; initial.fechaHasta = oldTransferDate.minusDays(1);
+    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = newClient; current.fechaDesde = oldTransferDate;
+    TransferenciaMoto transfer = new TransferenciaMoto(); transfer.id = transferId; transfer.motovehiculo = moto; transfer.clienteAnterior = oldClient; transfer.clienteNuevo = newClient; transfer.fechaTransferencia = oldTransferDate;
+    when(db.get(TransferenciaMoto.class, transferId)).thenReturn(transfer);
+    when(db.get(Cliente.class, newId)).thenReturn(newClient);
+    when(db.all(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(List.of(initial, current));
+    when(db.all(contains("from TransferenciaMoto"), eq(TransferenciaMoto.class), anyMap())).thenReturn(List.of(transfer));
+
+    api.updateTransfer(transferId, new ApiDtos.TransferUpdateRequest(newId, newTransferDate, "Fecha corregida"));
+
+    assertEquals(newTransferDate, transfer.fechaTransferencia);
+    assertEquals(newTransferDate.minusDays(1), initial.fechaHasta);
+    assertNotNull(current.deletedAt);
+    verify(db).flush();
+    verify(db).persist(any(PropietarioMoto.class));
+  }
+
+  @Test
+  void deletingTransferReactivatesThePreviousOwnerPeriodWithoutPhysicalDeletion() {
+    UUID motoId = UUID.randomUUID(), transferId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
+    LocalDate initialDate = LocalDate.now().minusDays(10), transferDate = LocalDate.now().minusDays(2);
+    Motovehiculo moto = moto(motoId); moto.patente = "AA123AA"; Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId);
+    PropietarioMoto initial = new PropietarioMoto(); initial.motovehiculo = moto; initial.cliente = oldClient; initial.fechaDesde = initialDate; initial.fechaHasta = transferDate.minusDays(1);
+    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = newClient; current.fechaDesde = transferDate;
+    TransferenciaMoto transfer = new TransferenciaMoto(); transfer.id = transferId; transfer.motovehiculo = moto; transfer.clienteAnterior = oldClient; transfer.clienteNuevo = newClient; transfer.fechaTransferencia = transferDate;
+    when(db.get(TransferenciaMoto.class, transferId)).thenReturn(transfer);
+    when(db.all(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(List.of(initial, current));
+    when(db.all(contains("from TransferenciaMoto"), eq(TransferenciaMoto.class), anyMap())).thenReturn(List.of());
+
+    api.deleteTransfer(transferId);
+
+    assertNotNull(transfer.deletedAt);
+    assertNotNull(current.deletedAt);
+    assertNull(initial.fechaHasta);
+    verify(db).flush();
   }
 
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {

@@ -20,6 +20,7 @@ public final class ApiDtos {
   public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteTelefono) {}
   public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotoConfigServiceRequest(@PositiveOrZero Integer kmServicePeriodo, @PositiveOrZero Integer mesesServicePeriodo, String serviceObservaciones) {}
+  public record TransferUpdateRequest(@NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
   public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo) {}
   public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) {}

@@ -51,6 +51,8 @@ public class ApiController {
   @GetMapping("/motovehiculos/{id}/transferencias") public List<TransferResponse> transfersForMotorcycle(@PathVariable UUID id){return api.transfersForMotorcycle(id);}
   @GetMapping("/transferencias") public PageResponse<TransferResponse> transfers(@RequestParam(required=false)String q,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="fechaTransferencia")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.transfers(q,fechaDesde,fechaHasta,page,size,sortBy,direction);}
   @PostMapping("/transferencias") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public TransferResponse createTransfer(@Valid @RequestBody TransferRequest r){return api.createTransfer(r);}
+  @PutMapping("/transferencias/{id}") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public TransferResponse updateTransfer(@PathVariable UUID id,@Valid @RequestBody TransferUpdateRequest r){return api.updateTransfer(id,r);}
+  @DeleteMapping("/transferencias/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public void transferDelete(@PathVariable UUID id){api.deleteTransfer(id);}
 
   // ---------- Service ----------
   @GetMapping("/motovehiculos/{id}/services") public List<ServiceResponse> services(@PathVariable UUID id){return api.services(id);}
