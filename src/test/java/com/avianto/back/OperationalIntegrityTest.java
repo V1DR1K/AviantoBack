@@ -78,6 +78,7 @@ class OperationalIntegrityTest {
 
     assertEquals(newId, response.clienteNuevoId());
     assertEquals(LocalDate.now().minusDays(1), current.fechaHasta);
+    verify(db).flush();
     verify(db).persist(any(PropietarioMoto.class));
     verify(db).persist(any(TransferenciaMoto.class));
   }

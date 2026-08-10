@@ -201,6 +201,7 @@ public class ApiService {
     if (fecha.isAfter(today())) throw new BusinessException(422, "La fecha no puede ser futura");
     if (actual.fechaDesde != null && !fecha.isAfter(actual.fechaDesde)) throw new BusinessException(422, "La fecha debe ser posterior al inicio del período actual");
     actual.fechaHasta = fecha.minusDays(1);
+    db.flush();
     PropietarioMoto siguiente = new PropietarioMoto(); siguiente.motovehiculo = m; siguiente.cliente = nuevo; siguiente.fechaDesde = fecha; siguiente.observaciones = blank(r.observaciones());
     db.persist(siguiente);
     TransferenciaMoto e = new TransferenciaMoto(); e.motovehiculo = m; e.clienteAnterior = actual.cliente; e.clienteNuevo = nuevo; e.fechaTransferencia = fecha; e.observaciones = blank(r.observaciones()); e.realizadaPor = actor();
