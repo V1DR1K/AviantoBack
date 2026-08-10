@@ -48,7 +48,9 @@ public class ApiController {
 
   // ---------- Propietarios ----------
   @GetMapping("/motovehiculos/{id}/propietarios") public List<OwnerResponse> owners(@PathVariable UUID id){return api.owners(id);}
-  @PostMapping("/motovehiculos/{id}/propietarios") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public OwnerResponse addOwner(@PathVariable UUID id,@Valid @RequestBody OwnerRequest r){return api.addOwner(id,r);}
+  @GetMapping("/motovehiculos/{id}/transferencias") public List<TransferResponse> transfersForMotorcycle(@PathVariable UUID id){return api.transfersForMotorcycle(id);}
+  @GetMapping("/transferencias") public PageResponse<TransferResponse> transfers(@RequestParam(required=false)String q,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="fechaTransferencia")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.transfers(q,fechaDesde,fechaHasta,page,size,sortBy,direction);}
+  @PostMapping("/transferencias") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public TransferResponse createTransfer(@Valid @RequestBody TransferRequest r){return api.createTransfer(r);}
 
   // ---------- Service ----------
   @GetMapping("/motovehiculos/{id}/services") public List<ServiceResponse> services(@PathVariable UUID id){return api.services(id);}
@@ -131,6 +133,7 @@ public class ApiController {
   @GetMapping("/motovehiculos/export.xlsx") public ResponseEntity<byte[]> motoExport(@RequestParam(required=false)String q,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)UUID marcaId,@RequestParam(required=false)Boolean activo,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("motovehiculos",all(n->api.motorcycles(q,clienteId,marcaId,null,activo,includeDeleted,n,100,sortBy,direction).content()),columns);}
   @GetMapping("/fichas/export.xlsx") public ResponseEntity<byte[]> fichasExport(@RequestParam(required=false)String q,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="fechaIngreso")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("fichas",all(n->api.fichas(q,clienteId,motoId,null,estado,estadoPago,fechaDesde,fechaHasta,includeDeleted,n,100,sortBy,direction).content()),columns);}
   @GetMapping("/repuestos/export.xlsx") public ResponseEntity<byte[]> repuestosExport(@RequestParam(required=false)String estado,@RequestParam(required=false)String estadoPago,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)UUID clienteId,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="false")boolean includeDeleted,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("repuestos",all(n->api.repuestos(estado,estadoPago,motoId,clienteId,null,fechaDesde,fechaHasta,includeDeleted,n,100,sortBy,direction).content()),columns);}
+  @GetMapping("/transferencias/export.xlsx") public ResponseEntity<byte[]> transfersExport(@RequestParam(required=false)String q,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="fechaTransferencia")String sortBy,@RequestParam(defaultValue="DESC")String direction,@RequestParam(required=false)String columns)throws Exception{return excel("transferencias",all(n->api.transfers(q,fechaDesde,fechaHasta,n,100,sortBy,direction).content()),columns);}
 
   private <T> List<T> all(Function<Integer,List<T>> get){List<T> r=new ArrayList<>();for(int p=0;;p++){List<T> part=get.apply(p);r.addAll(part);if(part.size()<100)return r;}}
   private ResponseEntity<byte[]> excel(String name,List<?> rows,String ignored)throws Exception{
@@ -152,8 +155,15 @@ public class ApiController {
         new Col("Propietario","text",o->str(((MotorcycleResponse)o).propietario())),
         new Col("Año","number",o->((MotorcycleResponse)o).anio()==null?"":String.valueOf(((MotorcycleResponse)o).anio())),
         new Col("Kilómetros","number",o->((MotorcycleResponse)o).kilometraje()==null?"":String.valueOf(((MotorcycleResponse)o).kilometraje())),
-        new Col("Estado","text",o->str(((MotorcycleResponse)o).estado())));
-      case "fichas" -> cols=List.of(
+       new Col("Estado","text",o->str(((MotorcycleResponse)o).estado())));
+       case "transferencias" -> cols=List.of(
+         new Col("Patente","text",o->str(((TransferResponse)o).patente())),
+         new Col("Moto","text",o->str(((TransferResponse)o).moto())),
+         new Col("Fecha","date",o->dateVal(((TransferResponse)o).fechaTransferencia())),
+         new Col("Cliente anterior","text",o->str(((TransferResponse)o).clienteAnterior())),
+         new Col("Cliente nuevo","text",o->str(((TransferResponse)o).clienteNuevo())),
+         new Col("Observaciones","text",o->str(((TransferResponse)o).observaciones())));
+       case "fichas" -> cols=List.of(
         new Col("Número","text",o->str(((FichaResponse)o).numero())),
         new Col("Cliente","text",o->str(((FichaResponse)o).cliente())),
         new Col("Moto","text",o->str(((FichaResponse)o).moto())),

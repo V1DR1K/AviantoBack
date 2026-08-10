@@ -32,6 +32,8 @@ public final class ApiDtos {
   public record PhotoResponse(UUID id, String filename, String contentType, Instant createdAt, String url) {}
   public record OwnerRequest(@NotNull UUID clienteId, LocalDate fechaDesde, String observaciones) {}
   public record OwnerResponse(UUID id, UUID clienteId, String cliente, LocalDate fechaDesde, LocalDate fechaHasta, boolean actual, String observaciones) {}
+  public record TransferRequest(@NotNull UUID motoId, @NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
+  public record TransferResponse(UUID id, UUID motoId, String patente, String moto, UUID clienteAnteriorId, String clienteAnterior, UUID clienteNuevoId, String clienteNuevo, LocalDate fechaTransferencia, String observaciones, String realizadaPor, Instant createdAt) {}
   public record ServiceRequest(UUID fichaId, @NotNull Integer kilometraje, LocalDate fecha, String observaciones) {}
   public record ServiceResponse(UUID id, UUID motoId, UUID fichaId, String fichaNumero, Integer kilometraje, LocalDate fecha, String observaciones, String realizadoPor, Instant creadoEn) {}
   public record NextServiceResponse(UUID motoId, String patente, String cliente, String moto, Integer kilometraje, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, Integer proximKm, Integer kmFaltan, LocalDate proximaFecha, Long diasFaltan, boolean atrasadoKm, boolean atrasadoFecha, boolean sinReferencia) {}

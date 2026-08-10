@@ -118,7 +118,7 @@ public class ApiService {
   }
   public MotorcycleResponse createMotorcycle(MotorcycleRequest r) {
     Motovehiculo e = new Motovehiculo(); copy(r, e); db.persist(e);
-    if (r.clienteId() != null) addOwner(e.id, new OwnerRequest(r.clienteId(), today(), null));
+    if (r.clienteId() != null) assignInitialOwner(e.id, r.clienteId());
     audit("Motovehículos", "CREAR", e.patente); clearAutocomplete(); return moto(e);
   }
   public MotorcycleResponse updateMotorcycle(UUID id, MotorcycleRequest r) { Motovehiculo e = db.get(Motovehiculo.class, id); copy(r, e); audit("Motovehículos", "EDITAR", e.patente); clearAutocomplete(); return moto(e); }
@@ -168,24 +168,49 @@ public class ApiService {
   public List<OwnerResponse> owners(UUID motoId) {
     return db.all("select e from PropietarioMoto e join e.cliente where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaDesde desc", PropietarioMoto.class, Map.of("moto", motoId)).stream().map(this::owner).toList();
   }
-  public OwnerResponse addOwner(UUID motoId, OwnerRequest r) {
+  private void assignInitialOwner(UUID motoId, UUID clientId) {
     Motovehiculo m = db.get(Motovehiculo.class, motoId);
-    Cliente c = db.get(Cliente.class, r.clienteId());
+    Cliente c = db.get(Cliente.class, clientId);
     if (!c.activo || c.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
-    LocalDate inicio = r.fechaDesde() == null ? today() : r.fechaDesde();
     PropietarioMoto actual = propietarioActual(motoId);
-    if (actual != null) {
-      if (actual.cliente.id.equals(c.id)) throw new BusinessException(409, "El cliente ya es el propietario actual");
-      if (!inicio.isAfter(actual.fechaDesde)) throw new BusinessException(422, "La fecha de inicio debe ser posterior al período actual");
-      actual.fechaHasta = inicio.minusDays(1);
-    }
-    PropietarioMoto n = new PropietarioMoto(); n.motovehiculo = m; n.cliente = c; n.fechaDesde = inicio; n.observaciones = blank(r.observaciones());
+    if (actual != null) throw new BusinessException(409, "La moto ya tiene un propietario actual");
+    PropietarioMoto n = new PropietarioMoto(); n.motovehiculo = m; n.cliente = c; n.fechaDesde = today();
     db.persist(n);
-    audit("Propietarios", "CAMBIAR", m.patente + " -> " + c.nombre);
+  }
+  public PageResponse<TransferResponse> transfers(String q, LocalDate desde, LocalDate hasta, int page, int size, String sort, String dir) {
+    Map<String,Object> ps = p();
+    String where = " where e.deletedAt is null";
+    if (q != null && !q.isBlank()) { where += " and (lower(e.motovehiculo.patente) like lower(:q) or lower(e.clienteAnterior.nombre) like lower(:q) or lower(e.clienteNuevo.nombre) like lower(:q))"; ps.put("q", "%" + q.trim() + "%"); }
+    if (desde != null) { where += " and e.fechaTransferencia>=:desde"; ps.put("desde", desde); }
+    if (hasta != null) { where += " and e.fechaTransferencia<=:hasta"; ps.put("hasta", hasta); }
+    return page("from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo", where, "from TransferenciaMoto e", ps, page, size, sortable(sort, Set.of("fechaTransferencia", "createdAt"), "fechaTransferencia"), dir, x -> transfer((TransferenciaMoto) x));
+  }
+  public List<TransferResponse> transfersForMotorcycle(UUID motoId) {
+    db.get(Motovehiculo.class, motoId);
+    return db.all("select e from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaTransferencia desc, e.createdAt desc", TransferenciaMoto.class, Map.of("moto", motoId)).stream().map(this::transfer).toList();
+  }
+  public TransferResponse createTransfer(TransferRequest r) {
+    Motovehiculo m = db.get(Motovehiculo.class, r.motoId());
+    if (!m.activo || m.deletedAt != null) throw new BusinessException(409, "La moto está inactiva");
+    Cliente nuevo = db.get(Cliente.class, r.clienteNuevoId());
+    if (!nuevo.activo || nuevo.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
+    PropietarioMoto actual = propietarioActual(m.id);
+    if (actual == null) throw new BusinessException(409, "La moto no tiene un propietario actual");
+    if (actual.cliente.id.equals(nuevo.id)) throw new BusinessException(409, "El cliente ya es el propietario actual");
+    LocalDate fecha = r.fechaTransferencia();
+    if (fecha.isAfter(today())) throw new BusinessException(422, "La fecha no puede ser futura");
+    if (actual.fechaDesde != null && !fecha.isAfter(actual.fechaDesde)) throw new BusinessException(422, "La fecha debe ser posterior al inicio del período actual");
+    actual.fechaHasta = fecha.minusDays(1);
+    PropietarioMoto siguiente = new PropietarioMoto(); siguiente.motovehiculo = m; siguiente.cliente = nuevo; siguiente.fechaDesde = fecha; siguiente.observaciones = blank(r.observaciones());
+    db.persist(siguiente);
+    TransferenciaMoto e = new TransferenciaMoto(); e.motovehiculo = m; e.clienteAnterior = actual.cliente; e.clienteNuevo = nuevo; e.fechaTransferencia = fecha; e.observaciones = blank(r.observaciones()); e.realizadaPor = actor();
+    db.persist(e);
+    audit("Transferencias", "TRANSFERIR", m.patente + " · " + actual.cliente.nombre + " -> " + nuevo.nombre);
     clearAutocomplete();
-    return owner(n);
+    return transfer(e);
   }
   private OwnerResponse owner(PropietarioMoto e) { return new OwnerResponse(e.id, e.cliente.id, e.cliente.nombre, e.fechaDesde, e.fechaHasta, e.fechaHasta == null, e.observaciones); }
+  private TransferResponse transfer(TransferenciaMoto e) { return new TransferResponse(e.id, e.motovehiculo.id, e.motovehiculo.patente, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.clienteAnterior.id, e.clienteAnterior.nombre, e.clienteNuevo.id, e.clienteNuevo.nombre, e.fechaTransferencia, e.observaciones, e.realizadaPor == null ? null : e.realizadaPor.nombre, e.createdAt); }
 
   // ---------- Service ----------
   public List<ServiceResponse> services(UUID motoId) {
