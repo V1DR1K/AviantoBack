@@ -52,6 +52,7 @@ public class ApiController {
 
   // ---------- Service ----------
   @GetMapping("/motovehiculos/{id}/services") public List<ServiceResponse> services(@PathVariable UUID id){return api.services(id);}
+  @GetMapping("/motovehiculos/{id}/services/historial") public PageResponse<ServiceResponse> serviceHistory(@PathVariable UUID id,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.serviceHistory(id,fechaDesde,fechaHasta,page,size,sortBy,direction);}
   @PostMapping("/motovehiculos/{id}/services") @ResponseStatus(HttpStatus.CREATED) public ServiceResponse addService(@PathVariable UUID id,@Valid @RequestBody ServiceRequest r){return api.addService(id,r);}
   @GetMapping("/services/proximos") public List<NextServiceResponse> nextServices(){return api.nextServices();}
 
@@ -100,6 +101,11 @@ public class ApiController {
   @GetMapping("/dashboard/fichas") public DashboardFichasResponse dashboardFichas(){return api.dashboardFichas();}
 
   // ---------- Configuración ----------
+  @GetMapping("/configuracion/trabajos") public List<TrabajoCatalogoResponse> trabajos(@RequestParam(required=false)String q, @RequestParam(required=false)Boolean activo, @RequestParam(defaultValue="false")boolean includeDeleted){return api.trabajos(q,activo,includeDeleted);}
+  @GetMapping("/configuracion/trabajos/autocomplete") public List<TrabajoCatalogoResponse> trabajosAutocomplete(@RequestParam(defaultValue="") String q){return api.trabajosAutocomplete(q);}
+  @PostMapping("/configuracion/trabajos") @ResponseStatus(HttpStatus.CREATED) public TrabajoCatalogoResponse createTrabajo(@Valid @RequestBody TrabajoCatalogoRequest r){return api.createTrabajo(r);}
+  @PutMapping("/configuracion/trabajos/{id}") public TrabajoCatalogoResponse updateTrabajo(@PathVariable UUID id, @Valid @RequestBody TrabajoCatalogoRequest r){return api.updateTrabajoCatalogo(id,r);}
+  @DeleteMapping("/configuracion/trabajos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void deleteTrabajo(@PathVariable UUID id){api.deleteTrabajoCatalogo(id);}
   @GetMapping("/configuracion/controles") public List<ControlResponse> controls(@RequestParam(defaultValue="false")boolean includeDeleted){return api.controls(includeDeleted);}
   @PostMapping("/configuracion/controles") @ResponseStatus(HttpStatus.CREATED) public ControlResponse control(@Valid @RequestBody ControlRequest r){return api.createControl(r);}
   @PutMapping("/configuracion/controles/{id}") public ControlResponse control(@PathVariable UUID id,@Valid @RequestBody ControlRequest r){return api.updateControl(id,r);}

@@ -1,6 +1,7 @@
 package com.avianto.back;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
 import java.math.BigDecimal;
@@ -45,6 +46,20 @@ class OperationalIntegrityTest {
     when(db.get(Ficha.class, fichaId)).thenReturn(ficha);
 
     assertThrows(BusinessException.class, () -> api.addService(motoId, new ApiDtos.ServiceRequest(fichaId, 100, null, null)));
+  }
+
+  @Test
+  void deletingCatalogWorkMakesItUnavailableForFutureSuggestions() {
+    UUID trabajoId = UUID.randomUUID();
+    TrabajoCatalogo trabajo = new TrabajoCatalogo();
+    trabajo.id = trabajoId;
+    trabajo.activo = true;
+    trabajo.descripcion = "Cambio de aceite";
+    when(db.get(TrabajoCatalogo.class, trabajoId)).thenReturn(trabajo);
+
+    api.deleteTrabajoCatalogo(trabajoId);
+
+    assertFalse(trabajo.activo);
   }
 
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {

@@ -23,7 +23,7 @@ public class ApiService {
   private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch(Exception e) { return null; } }
   AppUser actor() { UUID id = actorId(); return id == null ? null : db.get(AppUser.class, id); }
   void audit(String module, String action, String text) { Auditoria a = new Auditoria(); a.usuario = actor(); a.modulo = module; a.accion = action; a.descripcion = text; db.persist(a); }
-  private void activoOnly(BaseEntity e) { if (e instanceof Cliente x) x.activo = false; if (e instanceof Motovehiculo x) x.activo = false; if (e instanceof ControlRevision x) x.activo = false; if (e instanceof MarcaMoto x) x.activo = false; if (e instanceof Categoria x) x.activo = false; if (e instanceof AppUser x) x.activo = false; }
+  private void activoOnly(BaseEntity e) { if (e instanceof Cliente x) x.activo = false; if (e instanceof Motovehiculo x) x.activo = false; if (e instanceof ControlRevision x) x.activo = false; if (e instanceof MarcaMoto x) x.activo = false; if (e instanceof Categoria x) x.activo = false; if (e instanceof AppUser x) x.activo = false; if (e instanceof TrabajoCatalogo x) x.activo = false; }
   private void deleted(BaseEntity e) { activoOnly(e); e.deletedAt = Instant.now(); e.deletedBy = actorId(); }
   private String active(boolean includeDeleted) { return includeDeleted ? "" : " and e.deletedAt is null"; }
   private String dirOf(String dir) { return "DESC".equalsIgnoreCase(dir) ? "DESC" : "ASC"; }
@@ -191,6 +191,14 @@ public class ApiService {
   public List<ServiceResponse> services(UUID motoId) {
     return db.all("select e from ServiceMoto e join e.motovehiculo left join e.ficha where e.motovehiculo.id=:moto order by e.fecha desc", ServiceMoto.class, Map.of("moto", motoId)).stream().map(this::service).toList();
   }
+  public PageResponse<ServiceResponse> serviceHistory(UUID motoId, LocalDate desde, LocalDate hasta, int page, int size, String sort, String dir) {
+    db.get(Motovehiculo.class, motoId);
+    Map<String,Object> ps = p(); ps.put("moto", motoId);
+    String w = " where e.motovehiculo.id=:moto";
+    if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
+    if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
+    return page("from ServiceMoto e join e.motovehiculo left join e.ficha", w, "from ServiceMoto e", ps, page, size, sortable(sort, Set.of("fecha", "kilometraje", "createdAt"), "fecha"), dir, x -> service((ServiceMoto) x));
+  }
   public ServiceResponse addService(UUID motoId, ServiceRequest req) {
     if (req.kilometraje() == null || req.kilometraje() < 0) throw new BusinessException(400, "Kilometraje inválido");
     Motovehiculo m = db.get(Motovehiculo.class, motoId);
@@ -237,13 +245,13 @@ PropietarioMoto o = propietarioActual(m.id);
     if (estadoPago != null && !estadoPago.isBlank()) { w += " and e.estadoPago=:pag"; ps.put("pag", PagoState.of(estadoPago)); }
     if (desde != null) { w += " and e.fechaIngreso>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fechaIngreso<=:hasta"; ps.put("hasta", hasta); }
-    return page("from Ficha e join e.cliente join e.motovehiculo", w, "from Ficha e", ps, page, size, sortable(sort, Set.of("createdAt", "fechaIngreso", "estado", "total", "numero"), "fechaIngreso"), dir, x -> ficha((Ficha) x));
+    return page("from Ficha e join e.cliente join e.motovehiculo", w, "from Ficha e", ps, page, size, sortable(sort, Set.of("createdAt", "fechaIngreso", "estado", "estadoPago", "total", "numero"), "fechaIngreso"), dir, x -> ficha((Ficha) x));
   }
   public FichaResponse ficha(UUID id) { return ficha(db.get(Ficha.class, id)); }
   public FichaResponse createFicha(FichaRequest r) {
     Ficha e = new Ficha(); copy(r, e);
     assertNoOpenFicha(e.motovehiculo.id, null);
-    e.numero = "F-" + System.currentTimeMillis();
+    e.numero = "F-" + db.nextVal("ficha_numero_seq");
     db.persist(e);
     audit("Fichas", "CREAR", e.numero);
     return ficha(e);
@@ -380,7 +388,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (q != null && !q.isBlank()) { w += " and (lower(e.numero) like :q or lower(coalesce(e.proveedor,'')) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
     if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
-    return page("from RepuestoPedido e join e.motovehiculo join e.cliente", w, "from RepuestoPedido e", ps, page, size, sortable(sort, Set.of("fecha", "createdAt", "total", "estado"), "fecha"), dir, x -> repuesto((RepuestoPedido) x));
+    return page("from RepuestoPedido e join e.motovehiculo join e.cliente", w, "from RepuestoPedido e", ps, page, size, sortable(sort, Set.of("fecha", "createdAt", "total", "estado", "estadoPago"), "fecha"), dir, x -> repuesto((RepuestoPedido) x));
   }
   public RepuestoResponse repuesto(UUID id) { return repuesto(db.get(RepuestoPedido.class, id)); }
   public RepuestoResponse createRepuesto(RepuestoRequest r) {
@@ -389,7 +397,7 @@ PropietarioMoto o = propietarioActual(m.id);
     Cliente c = db.get(Cliente.class, r.clienteId());
     RepuestoPedido e = new RepuestoPedido();
     applyRepuestoLinks(e, m, c, r.fichaId());
-    e.numero = "R-" + System.currentTimeMillis() + "-" + e.id.toString().substring(0, 4).toUpperCase();
+    e.numero = "R-" + db.nextVal("repuesto_pedido_numero_seq");
     e.fecha = r.fecha() == null ? today() : r.fecha();
     e.proveedor = blank(r.proveedor());
     e.observaciones = blank(r.observaciones());
@@ -560,6 +568,22 @@ PropietarioMoto o = propietarioActual(m.id);
   }
 
   // ---------- Configuración ----------
+  public List<TrabajoCatalogoResponse> trabajos(String q, Boolean activo, boolean includeDeleted) {
+    Map<String,Object> ps = p();
+    String w = " where 1=1" + active(includeDeleted);
+    if (q != null && !q.isBlank()) { w += " and lower(e.descripcion) like :q"; ps.put("q", "%" + q.trim().toLowerCase() + "%"); }
+    if (activo != null) { w += " and e.activo=:activo"; ps.put("activo", activo); }
+    return db.all("select e from TrabajoCatalogo e" + w + " order by e.descripcion", TrabajoCatalogo.class, ps).stream().map(this::trabajo).toList();
+  }
+  public List<TrabajoCatalogoResponse> trabajosAutocomplete(String q) {
+    String query = q == null ? "" : q.trim().toLowerCase();
+    return db.list("select e from TrabajoCatalogo e where e.deletedAt is null and e.activo=true and lower(e.descripcion) like :q order by e.descripcion", TrabajoCatalogo.class, Map.of("q", "%" + query + "%"), 0, 15).stream().map(this::trabajo).toList();
+  }
+  public TrabajoCatalogoResponse createTrabajo(TrabajoCatalogoRequest r) { TrabajoCatalogo e = new TrabajoCatalogo(); copy(r, e); db.persist(e); audit("Configuración", "CREAR TRABAJO", e.descripcion); return trabajo(e); }
+  public TrabajoCatalogoResponse updateTrabajoCatalogo(UUID id, TrabajoCatalogoRequest r) { TrabajoCatalogo e = db.get(TrabajoCatalogo.class, id); copy(r, e); audit("Configuración", "EDITAR TRABAJO", e.descripcion); return trabajo(e); }
+  public void deleteTrabajoCatalogo(UUID id) { TrabajoCatalogo e = db.get(TrabajoCatalogo.class, id); deleted(e); audit("Configuración", "ELIMINAR TRABAJO", e.descripcion); }
+  private void copy(TrabajoCatalogoRequest r, TrabajoCatalogo e) { e.descripcion = r.descripcion().trim(); e.precioBase = money(r.precioBase()); if (r.activo() != null) e.activo = r.activo(); }
+  private TrabajoCatalogoResponse trabajo(TrabajoCatalogo e) { return new TrabajoCatalogoResponse(e.id, e.descripcion, e.precioBase, e.activo, e.createdAt, e.updatedAt); }
   public List<NamedResponse> brands(boolean includeDeleted) { return db.all("select e from MarcaMoto e where 1=1" + active(includeDeleted) + " order by e.nombre", MarcaMoto.class, Map.of()).stream().map(b -> new NamedResponse(b.id, b.nombre, b.activo, b.createdAt, b.updatedAt)).toList(); }
   public NamedResponse createBrand(NameRequest r) { MarcaMoto e = new MarcaMoto(); e.nombre = r.nombre().trim(); db.persist(e); audit("CONFIG", "MARCAS", e.nombre); return new NamedResponse(e.id, e.nombre, e.activo, e.createdAt, e.updatedAt); }
   public NamedResponse updateBrand(UUID id, NameRequest r) { MarcaMoto e = db.get(MarcaMoto.class, id); e.nombre = r.nombre().trim(); if (r.activo() != null) e.activo = r.activo(); audit("CONFIG", "MARCAS", e.nombre); return new NamedResponse(e.id, e.nombre, e.activo, e.createdAt, e.updatedAt); }
