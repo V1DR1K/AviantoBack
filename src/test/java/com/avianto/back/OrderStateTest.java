@@ -17,6 +17,8 @@ class OrderStateTest {
   }
 
   @Test void motorcycleStatesFollowTheirSection() {
+    assertEquals(MotoState.DISPONIBLE, MotoState.of("Disponible"));
+    assertEquals("Disponible", MotoState.DISPONIBLE.label());
     assertEquals(MotoState.INGRESADA_TALLER, MotoState.of("Ingresada Taller"));
     assertEquals(MotoState.EN_VENTA, MotoState.of("En venta"));
     assertEquals(MotoState.TRANSFERENCIA_EN_CURSO, MotoState.of("Transferencia en curso"));

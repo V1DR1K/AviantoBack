@@ -33,7 +33,7 @@ class OperationalIntegrityTest {
   @Test
   void intakeAssignsTheMotorcycleToOneSection() {
     UUID motoId = UUID.randomUUID();
-    Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.seccion = null; moto.estadoOperativo = null;
+    Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.seccion = null; moto.estadoOperativo = MotoState.DISPONIBLE;
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
 
     ApiDtos.MotorcycleResponse response = api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("VENTA"));
@@ -54,16 +54,84 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void deliveryClosesAnIngresadaWorkshopMotorcycle() {
+  void deliveryRequiresAnApprovedRevision() {
     UUID motoId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId);
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
-    when(db.count(anyString(), anyMap())).thenReturn(0L);
+    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
+    assertTrue(moto.ingresada);
+  }
 
-    api.entregarMoto(motoId);
+  @Test
+  void deliveryMustBeCompletedByApprovingTheRevision() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+
+    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
+    assertTrue(moto.ingresada);
+  }
+
+  @Test
+  void soldMotorcycleIsTerminalForIntake() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.estadoOperativo = MotoState.VENDIDA;
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+
+    assertThrows(BusinessException.class, () -> api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("TALLER")));
+  }
+
+  @Test
+  void serviceRejectsFutureDates() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+
+    assertThrows(BusinessException.class, () -> api.addService(motoId, new ApiDtos.ServiceRequest(null, 100, LocalDate.now().plusDays(1), null)));
+  }
+
+  @Test
+  void cancellingFichaReleasesTheMotorcycle() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    Cliente c = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.EN_PROCESO;
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.fichaState(ficha.id, new ApiDtos.StateRequest("Cancelada"));
 
     assertFalse(moto.ingresada);
     assertEquals(MotoState.ENTREGADA, moto.estadoOperativo);
+  }
+
+  @Test
+  void lastActiveAdminCannotBeDeleted() {
+    AppUser admin = new AppUser(); admin.rol = Role.ADMINISTRACION; admin.activo = true;
+    when(db.get(AppUser.class, admin.id)).thenReturn(admin);
+    when(db.count(anyString(), anyMap())).thenReturn(1L);
+
+    assertThrows(BusinessException.class, () -> api.deleteUser(admin.id));
+  }
+
+  @Test
+  void motorcycleOwnerFilterUsesCurrentPeriod() {
+    UUID motoId = UUID.randomUUID(), clientId = UUID.randomUUID();
+    api.motorcycles(null, clientId, null, null, null, false, 0, 10, "patente", "ASC");
+    verify(db).list(contains("fechaHasta is null"), eq(Object.class), anyMap(), eq(0), eq(10));
+  }
+
+  @Test
+  void motorcycleStateFilterDoesNotReadFichaHistory() {
+    api.motorcycles(null, null, null, "En proceso", null, false, 0, 10, "patente", "ASC");
+    verify(db, never()).all(contains("from Ficha"), eq(Ficha.class), anyMap());
+    verify(db).list(contains("e.estadoOperativo=:state"), eq(Object.class), anyMap(), eq(0), eq(10));
+  }
+
+  @Test
+  void resetScriptIsExplicitAndDoesNotCascade() throws Exception {
+    String script = java.nio.file.Files.readString(java.nio.file.Path.of("ops/reset-operational-data.sh"));
+    assertTrue(script.contains("RESET_OPERATIONAL_DATA=YES"));
+    assertFalse(script.toUpperCase(Locale.ROOT).contains("CASCADE"));
   }
 
   @Test
@@ -75,6 +143,19 @@ class OperationalIntegrityTest {
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
     when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
     when(db.count(contains("from Ficha"), anyMap())).thenReturn(1L);
+
+    assertThrows(BusinessException.class, () -> api.createFicha(ficha(clienteId, motoId)));
+  }
+
+  @Test
+  void fichaRequiresAtLeastOneWork() {
+    UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
+    Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);
+    PropietarioMoto owner = new PropietarioMoto(); owner.cliente = cliente; owner.motovehiculo = moto;
+    when(db.get(Cliente.class, clienteId)).thenReturn(cliente);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+    when(db.count(contains("from Ficha"), anyMap())).thenReturn(0L);
 
     assertThrows(BusinessException.class, () -> api.createFicha(ficha(clienteId, motoId)));
   }
@@ -184,5 +265,5 @@ class OperationalIntegrityTest {
     return new ApiDtos.FichaRequest(clienteId, motoId, null, null, null, null, null, BigDecimal.ZERO, false, List.of());
   }
   private static Cliente cliente(UUID id) { Cliente c = new Cliente(); c.id = id; c.nombre = "Cliente"; return c; }
-   private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; m.marca = new MarcaMoto(); m.marca.id = UUID.randomUUID(); m.marca.nombre = "Honda"; return m; }
+  private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; m.marca = new MarcaMoto(); m.marca.id = UUID.randomUUID(); m.marca.nombre = "Honda"; return m; }
 }
