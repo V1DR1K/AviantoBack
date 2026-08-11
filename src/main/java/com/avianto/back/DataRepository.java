@@ -14,6 +14,6 @@ public class DataRepository {
   public <T> List<T> list(String jpql, Class<T> type, Map<String,?> params, int page, int size) { TypedQuery<T> q=em.createQuery(jpql,type); params.forEach(q::setParameter); return q.setFirstResult(page*size).setMaxResults(size).getResultList(); }
   public long count(String jpql, Map<String,?> params) { TypedQuery<Long> q=em.createQuery(jpql,Long.class); params.forEach(q::setParameter); return q.getSingleResult(); }
   public <T> List<T> all(String jpql, Class<T> type, Map<String,?> params) { TypedQuery<T> q=em.createQuery(jpql,type); params.forEach(q::setParameter); return q.getResultList(); }
-  public <T> T one(String jpql, Class<T> type, Map<String,?> params) { try { TypedQuery<T> query=em.createQuery(jpql,type); params.forEach(query::setParameter); return query.setMaxResults(1).getResultStream().findFirst().orElse(null); } catch(NoResultException e) { return null; } }
+  public <T> T one(String jpql, Class<T> type, Map<String,?> params) { TypedQuery<T> query=em.createQuery(jpql,type); params.forEach(query::setParameter); List<T> results=query.setMaxResults(1).getResultList(); return results.isEmpty() ? null : results.get(0); }
   public long nextVal(String sequence) { return ((Number) em.createNativeQuery("select nextval('" + sequence + "')").getSingleResult()).longValue(); }
 }
