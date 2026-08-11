@@ -39,10 +39,14 @@ public class ApiController {
   @GetMapping("/motovehiculos/{id}") public MotorcycleResponse moto(@PathVariable UUID id){return api.moto(id);}
   @PutMapping("/motovehiculos/{id}") public MotorcycleResponse moto(@PathVariable UUID id,@Valid @RequestBody MotorcycleRequest r){return api.updateMotorcycle(id,r);}
   @DeleteMapping("/motovehiculos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void motoDelete(@PathVariable UUID id){api.deleteMotorcycle(id);}
+  @PostMapping("/motovehiculos/{id}/ingreso") public MotorcycleResponse motoIngreso(@PathVariable UUID id,@Valid @RequestBody IntakeRequest r){return api.ingresarMoto(id,r);}
+  @PostMapping("/motovehiculos/{id}/entrega") public MotorcycleResponse motoEntrega(@PathVariable UUID id){return api.entregarMoto(id);}
+  @PatchMapping("/motovehiculos/{id}/venta/estado") public MotorcycleResponse ventaState(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.estadoVenta(id,r);}
+  @PostMapping("/motovehiculos/{id}/venta/completar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public MotorcycleResponse completarVenta(@PathVariable UUID id){return api.completarVenta(id);}
   @PatchMapping("/motovehiculos/{id}/config-service") public MotorcycleResponse motoConfig(@PathVariable UUID id,@Valid @RequestBody MotoConfigServiceRequest r){return api.updateMotoConfig(id,r);}
 
   // ---------- Perfiles (una vista integral por moto) ----------
-  @GetMapping("/perfiles") public PageResponse<ProfileResponse> profiles(@RequestParam(required=false)String q,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction){return api.profiles(q,estado,page,size,sortBy,direction);}
+  @GetMapping("/perfiles") public PageResponse<ProfileResponse> profiles(@RequestParam(required=false)String q,@RequestParam(required=false)String dominio,@RequestParam(required=false)String moto,@RequestParam(required=false)String cliente,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction){return api.profiles(q,dominio,moto,cliente,estado,page,size,sortBy,direction);}
   @PostMapping("/perfiles") @ResponseStatus(HttpStatus.CREATED) public ProfileResponse createProfile(@Valid @RequestBody ProfileRequest r){return api.createProfile(r);}
   @GetMapping("/perfiles/{id}") public ProfileResponse profile(@PathVariable UUID id){return api.profile(id);}
 
@@ -103,6 +107,7 @@ public class ApiController {
   @GetMapping("/dashboard") public DashboardResponse dashboard(@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta){return api.dashboard(fechaDesde,fechaHasta);}
   @GetMapping("/dashboard/taller") public TallerResponse taller(){return api.taller();}
   @GetMapping("/dashboard/fichas") public DashboardFichasResponse dashboardFichas(){return api.dashboardFichas();}
+  @GetMapping("/dashboard/ventas") public VentaResponse ventas(){return api.ventas();}
 
   // ---------- Configuración ----------
   @GetMapping("/configuracion/trabajos") public List<TrabajoCatalogoResponse> trabajos(@RequestParam(required=false)String q, @RequestParam(required=false)Boolean activo, @RequestParam(defaultValue="false")boolean includeDeleted){return api.trabajos(q,activo,includeDeleted);}

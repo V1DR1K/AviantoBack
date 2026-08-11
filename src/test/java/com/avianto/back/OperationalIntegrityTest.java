@@ -30,6 +30,42 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void intakeAssignsTheMotorcycleToOneSection() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.seccion = null; moto.estadoOperativo = null;
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+
+    ApiDtos.MotorcycleResponse response = api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("VENTA"));
+
+    assertTrue(moto.ingresada);
+    assertEquals(MotoSection.VENTA, moto.seccion);
+    assertEquals(MotoState.INGRESADA_VENTA.label(), response.estado());
+  }
+
+  @Test
+  void deliveryRejectsOpenWorkshopOperations() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.count(contains("from Ficha"), anyMap())).thenReturn(1L);
+
+    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
+  }
+
+  @Test
+  void deliveryClosesAnIngresadaWorkshopMotorcycle() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.count(anyString(), anyMap())).thenReturn(0L);
+
+    api.entregarMoto(motoId);
+
+    assertFalse(moto.ingresada);
+    assertEquals(MotoState.ENTREGADA, moto.estadoOperativo);
+  }
+
+  @Test
   void fichaCannotBeOpenedWhenTheMotorcycleAlreadyHasOne() {
     UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
     Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);
@@ -69,7 +105,7 @@ class OperationalIntegrityTest {
   @Test
   void transferClosesTheCurrentPeriodAndCreatesTheNewOwner() {
     UUID motoId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
-    Motovehiculo moto = moto(motoId); moto.patente = "AA123AA"; moto.modelo = "FZ"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand;
+     Motovehiculo moto = moto(motoId); moto.seccion = MotoSection.VENTA; moto.estadoOperativo = MotoState.EN_VENTA; moto.ingresada = true; moto.patente = "AA123AA"; moto.modelo = "FZ"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand;
     Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId); newClient.nombre = "Nuevo cliente";
     PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = oldClient; current.fechaDesde = LocalDate.now().minusDays(10);
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
@@ -147,5 +183,5 @@ class OperationalIntegrityTest {
     return new ApiDtos.FichaRequest(clienteId, motoId, null, null, null, null, null, BigDecimal.ZERO, false, List.of());
   }
   private static Cliente cliente(UUID id) { Cliente c = new Cliente(); c.id = id; c.nombre = "Cliente"; return c; }
-  private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; return m; }
+   private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; return m; }
 }

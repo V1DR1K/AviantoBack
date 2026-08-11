@@ -5,13 +5,22 @@ import org.junit.jupiter.api.Test;
 
 class OrderStateTest {
   @Test void fichaLabelsAndMapping() {
+    assertEquals(FichaState.CARGA, FichaState.of("Cargada"));
     assertEquals(FichaState.CARGA, FichaState.of("Carga"));
     assertEquals(FichaState.EN_PROCESO, FichaState.of("En proceso"));
     assertEquals(FichaState.REVISION, FichaState.of("Revisión"));
     assertEquals(FichaState.ENTREGADA, FichaState.of("Entregada"));
     assertEquals(FichaState.CANCELADA, FichaState.of("Cancelada"));
     assertEquals("En proceso", FichaState.EN_PROCESO.label());
+    assertEquals("Cargada", FichaState.CARGA.label());
     assertThrows(BusinessException.class, () -> FichaState.of("Borrador"));
+  }
+
+  @Test void motorcycleStatesFollowTheirSection() {
+    assertEquals(MotoState.INGRESADA_TALLER, MotoState.of("Ingresada Taller"));
+    assertEquals(MotoState.EN_VENTA, MotoState.of("En venta"));
+    assertEquals(MotoState.TRANSFERENCIA_EN_CURSO, MotoState.of("Transferencia en curso"));
+    assertEquals("Vendida", MotoState.VENDIDA.label());
   }
 
   @Test
