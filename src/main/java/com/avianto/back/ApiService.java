@@ -405,20 +405,22 @@ PropietarioMoto o = propietarioActual(m.id);
     audit("Fichas", "CREAR", e.numero);
     return ficha(e);
   }
-  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); e.trabajos.clear(); copy(r, e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.CARGA) e.motovehiculo.estadoOperativo = MotoState.CARGADA; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
+  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); e.trabajos.clear(); copy(r, e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.CARGA) e.motovehiculo.estadoOperativo = MotoState.CARGADA; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
   public void deleteFicha(UUID id) { Ficha e = db.get(Ficha.class, id); if (e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha entregada"); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
   public FichaResponse fichaState(UUID id, StateRequest r) {
     Ficha e = db.get(Ficha.class, id); FichaState next = FichaState.of(r.estado());
     if (next == FichaState.CANCELADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) e.estado = next;
     else if (e.estado == FichaState.CARGA && next == FichaState.EN_PROCESO && !e.trabajos.isEmpty()) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     else if (e.estado == FichaState.EN_PROCESO && next == FichaState.REVISION && trabajosFinalizados(e)) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.REVISION; }
+    else if (e.estado == FichaState.REVISION && next == FichaState.EN_PROCESO) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
+    else if (e.estado == FichaState.EN_PROCESO && next == FichaState.CARGA) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.CARGADA; }
     else throw new BusinessException(422, "Transición de ficha inválida");
     audit("Fichas", "ESTADO", e.numero + " -> " + e.estado.label()); return ficha(e);
   }
   public FichaResponse fichaPago(UUID id, PagoRequest r) {
     Ficha e = db.get(Ficha.class, id);
     if (e.estado == FichaState.CANCELADA) throw new BusinessException(409, "No puede registrarse un pago en una ficha cancelada");
-    e.estadoPago = PagoState.of(r.estadoPago());
+    applyFichaPayment(e, PagoState.of(r.estadoPago()), r.itemIds());
     audit("Fichas", "PAGO", e.numero + " -> " + e.estadoPago.label()); return ficha(e);
   }
   private void assertEditable(Ficha e) { if (e.estado == FichaState.ENTREGADA || e.estado == FichaState.CANCELADA) throw new BusinessException(409, "La ficha ya finalizó"); }
@@ -472,21 +474,21 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   private boolean trabajosFinalizados(Ficha e) { return !e.trabajos.isEmpty() && e.trabajos.stream().allMatch(x -> x.estadoTrabajo == TrabajoState.REALIZADO || x.estadoTrabajo == TrabajoState.CANCELADO); }
   private FichaResponse ficha(Ficha e) {
-    List<FichaTrabajoResponse> lines = e.trabajos.stream().map(t -> new FichaTrabajoResponse(t.id, t.descripcion, t.precioAplicado, t.descuento, t.subtotal, t.estadoTrabajo.label(), t.observacionTrabajo, t.completadoAt, t.completadoPor)).toList();
+    List<FichaTrabajoResponse> lines = e.trabajos.stream().map(t -> new FichaTrabajoResponse(t.id, t.descripcion, t.precioAplicado, t.descuento, t.subtotal, t.estadoTrabajo.label(), t.observacionTrabajo, t.completadoAt, t.completadoPor, t.pagado)).toList();
     List<PhotoResponse> fotos = e.fotos.stream().map(f -> photo(e.id, f)).toList();
     return new FichaResponse(e.id, e.numero, e.cliente.id, e.motovehiculo.id, e.cliente.nombre, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.motovehiculo.patente, e.vencimiento, e.fechaIngreso, e.fechaEntregaEstimada, e.fechaEntregaReal, e.kilometrajeIngreso, e.observaciones, e.descuentoGlobal, e.iva, e.estado.label(), e.estadoPago.label(), e.total, e.createdAt, lines, fotos);
   }
-  public FichaResponse addTrabajo(UUID id, FichaTrabajoRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); applyTrabajo(e, r, null); recalc(e); audit("Fichas", "TRABAJO", e.numero); return ficha(e); }
+  public FichaResponse addTrabajo(UUID id, FichaTrabajoRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); applyTrabajo(e, r, null); recalc(e); recalcFichaPayment(e); audit("Fichas", "TRABAJO", e.numero); return ficha(e); }
   public FichaResponse updateTrabajo(UUID id, UUID trabajoId, FichaTrabajoRequest r) {
     Ficha e = db.get(Ficha.class, id); assertEditable(e);
     FichaTrabajo old = e.trabajos.stream().filter(x -> x.id.equals(trabajoId)).findFirst().orElseThrow(() -> new NotFoundException("El trabajo no existe"));
-    e.trabajos.remove(old); applyTrabajo(e, r, trabajoId); recalc(e);
+    e.trabajos.remove(old); applyTrabajo(e, r, trabajoId); recalc(e); recalcFichaPayment(e);
     audit("Fichas", "TRABAJO", e.numero); return ficha(e);
   }
   public void deleteTrabajo(UUID id, UUID trabajoId) {
     Ficha e = db.get(Ficha.class, id); assertEditable(e);
     FichaTrabajo target = e.trabajos.stream().filter(x -> x.id.equals(trabajoId)).findFirst().orElseThrow(() -> new NotFoundException("El trabajo no existe"));
-    e.trabajos.remove(target); recalc(e); audit("Fichas", "QUITAR TRABAJO", e.numero);
+    e.trabajos.remove(target); recalc(e); recalcFichaPayment(e); audit("Fichas", "QUITAR TRABAJO", e.numero);
   }
   public FichaResponse trabajoState(UUID id, UUID trabajoId, StateRequest r) {
     Ficha e = db.get(Ficha.class, id);
@@ -496,11 +498,32 @@ PropietarioMoto o = propietarioActual(m.id);
     if (target.estadoTrabajo == TrabajoState.CANCELADO) throw new BusinessException(422, "Trabajo cancelado");
     target.estadoTrabajo = next;
     if (next == TrabajoState.REALIZADO) { target.completadoAt = Instant.now(); target.completadoPor = actorId(); }
-    else { target.completadoAt = null; target.completadoPor = null; }
-    if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) e.estado = FichaState.EN_PROCESO;
+    else { target.completadoAt = null; target.completadoPor = null; target.pagado = false; }
+    if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) { e.estado = FichaState.EN_PROCESO; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     audit("Fichas", "TRABAJO ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
-    if ((next == TrabajoState.REALIZADO || next == TrabajoState.CANCELADO) && e.estado == FichaState.EN_PROCESO && trabajosFinalizados(e)) e.estado = FichaState.REVISION;
+    if ((next == TrabajoState.REALIZADO || next == TrabajoState.CANCELADO) && e.estado == FichaState.EN_PROCESO && trabajosFinalizados(e)) { e.estado = FichaState.REVISION; e.motovehiculo.estadoOperativo = MotoState.REVISION; }
+    recalcFichaPayment(e);
     return ficha(e);
+  }
+
+  private void applyFichaPayment(Ficha ficha, PagoState requested, List<UUID> selectedIds) {
+    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo == TrabajoState.REALIZADO).toList();
+    if (requested == PagoState.NO_PAGADO) eligible.forEach(t -> t.pagado = false);
+    else if (requested == PagoState.PAGADO) eligible.forEach(t -> t.pagado = true);
+    else {
+      if (eligible.isEmpty()) throw new BusinessException(422, "La ficha no tiene trabajos realizados para registrar un pago parcial");
+      Set<UUID> ids = selectedIds == null ? Set.of() : new HashSet<>(selectedIds);
+      Set<UUID> eligibleIds = eligible.stream().map(t -> t.id).collect(Collectors.toSet());
+      if (ids.isEmpty() || !eligibleIds.containsAll(ids)) throw new BusinessException(422, "Seleccioná al menos un trabajo realizado válido");
+      eligible.forEach(t -> t.pagado = ids.contains(t.id));
+    }
+    recalcFichaPayment(ficha);
+  }
+
+  private void recalcFichaPayment(Ficha ficha) {
+    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo == TrabajoState.REALIZADO).toList();
+    long paid = eligible.stream().filter(t -> t.pagado).count();
+    ficha.estadoPago = paid == 0 ? PagoState.NO_PAGADO : paid == eligible.size() ? PagoState.PAGADO : PagoState.PARCIAL;
   }
 
   // ---------- Fotos ----------
@@ -564,7 +587,7 @@ PropietarioMoto o = propietarioActual(m.id);
     e.proveedor = blank(r.proveedor()); e.observaciones = blank(r.observaciones());
     e.items.clear();
     for (RepuestoItemRequest req : r.items()) applyRepuestoItem(e, req, null);
-    recalcRepuesto(e);
+    recalcRepuesto(e); recalcRepuestoPayment(e);
     audit("REPUESTOS", "EDITAR", e.numero);
     return repuesto(e);
   }
@@ -595,7 +618,7 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   private void recalcRepuesto(RepuestoPedido e) { e.total = money(e.items.stream().map(x -> x.subtotal).reduce(BigDecimal.ZERO, BigDecimal::add)); }
   private RepuestoResponse repuesto(RepuestoPedido e) {
-    List<RepuestoItemResponse> items = e.items.stream().map(i -> new RepuestoItemResponse(i.id, i.fichaTrabajo == null ? null : i.fichaTrabajo.id, i.descripcion, i.tipo, i.cantidad, i.precio, i.subtotal, i.estado.label(), i.observaciones)).toList();
+    List<RepuestoItemResponse> items = e.items.stream().map(i -> new RepuestoItemResponse(i.id, i.fichaTrabajo == null ? null : i.fichaTrabajo.id, i.descripcion, i.tipo, i.cantidad, i.precio, i.subtotal, i.estado.label(), i.observaciones, i.pagado)).toList();
     return new RepuestoResponse(e.id, e.numero, e.motovehiculo.id, e.motovehiculo.patente, e.cliente.id, e.cliente.nombre, e.ficha == null ? null : e.ficha.id, e.fecha, e.estado.label(), e.estadoPago.label(), e.total, e.proveedor, e.observaciones, items, e.createdAt);
   }
   public RepuestoResponse repuestoEstado(UUID id, StateRequest r) {
@@ -606,27 +629,49 @@ PropietarioMoto o = propietarioActual(m.id);
     else throw new BusinessException(422, "Transición de pedido inválida");
     audit("REPUESTOS", "ESTADO", e.numero + " -> " + e.estado.label()); return repuesto(e);
   }
-  public RepuestoResponse repuestoPago(UUID id, PagoRequest r) { RepuestoPedido e = db.get(RepuestoPedido.class, id); if (e.estado == RepuestoPedidoState.CANCELADO) throw new BusinessException(409, "No puede registrarse un pago en un pedido cancelado"); e.estadoPago = PagoState.of(r.estadoPago()); audit("REPUESTOS", "PAGO", e.numero + " -> " + e.estadoPago.label()); return repuesto(e); }
+  public RepuestoResponse repuestoPago(UUID id, PagoRequest r) { RepuestoPedido e = db.get(RepuestoPedido.class, id); if (e.estado == RepuestoPedidoState.CANCELADO) throw new BusinessException(409, "No puede registrarse un pago en un pedido cancelado"); applyRepuestoPayment(e, PagoState.of(r.estadoPago()), r.itemIds()); audit("REPUESTOS", "PAGO", e.numero + " -> " + e.estadoPago.label()); return repuesto(e); }
   public RepuestoResponse repuestoItemEstado(UUID id, UUID itemId, StateRequest r) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
     RepuestoPedidoItem target = e.items.stream().filter(x -> x.id.equals(itemId)).findFirst().orElseThrow(() -> new NotFoundException("El ítem no existe"));
     RepuestoItemState next = RepuestoItemState.of(r.estado());
     if (target.estado == RepuestoItemState.ENTREGADO || target.estado == RepuestoItemState.CANCELADO) throw new BusinessException(422, "Ítem finalizado");
     target.estado = next;
+    if (next == RepuestoItemState.CANCELADO) target.pagado = false;
     audit("REPUESTOS", "ITEM ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
     if (next == RepuestoItemState.ENTREGADO && e.estado == RepuestoPedidoState.EN_CURSO && e.items.stream().allMatch(x -> x.estado == RepuestoItemState.ENTREGADO || x.estado == RepuestoItemState.CANCELADO)) e.estado = RepuestoPedidoState.COMPLETADO;
+    recalcRepuestoPayment(e);
     return repuesto(e);
+  }
+
+  private void applyRepuestoPayment(RepuestoPedido pedido, PagoState requested, List<UUID> selectedIds) {
+    List<RepuestoPedidoItem> eligible = pedido.items.stream().filter(i -> i.estado != RepuestoItemState.CANCELADO).toList();
+    if (requested == PagoState.NO_PAGADO) eligible.forEach(i -> i.pagado = false);
+    else if (requested == PagoState.PAGADO) eligible.forEach(i -> i.pagado = true);
+    else {
+      if (eligible.isEmpty()) throw new BusinessException(422, "El pedido no tiene ítems disponibles para registrar un pago parcial");
+      Set<UUID> ids = selectedIds == null ? Set.of() : new HashSet<>(selectedIds);
+      Set<UUID> eligibleIds = eligible.stream().map(i -> i.id).collect(Collectors.toSet());
+      if (ids.isEmpty() || !eligibleIds.containsAll(ids)) throw new BusinessException(422, "Seleccioná al menos un ítem no cancelado válido");
+      eligible.forEach(i -> i.pagado = ids.contains(i.id));
+    }
+    recalcRepuestoPayment(pedido);
+  }
+
+  private void recalcRepuestoPayment(RepuestoPedido pedido) {
+    List<RepuestoPedidoItem> eligible = pedido.items.stream().filter(i -> i.estado != RepuestoItemState.CANCELADO).toList();
+    long paid = eligible.stream().filter(i -> i.pagado).count();
+    pedido.estadoPago = paid == 0 ? PagoState.NO_PAGADO : paid == eligible.size() ? PagoState.PAGADO : PagoState.PARCIAL;
   }
   public RepuestoResponse updateRepuestoItem(UUID id, UUID itemId, RepuestoItemRequest r) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
     RepuestoPedidoItem old = e.items.stream().filter(x -> x.id.equals(itemId)).findFirst().orElseThrow(() -> new NotFoundException("El ítem no existe"));
-    e.items.remove(old); applyRepuestoItem(e, r, itemId); recalcRepuesto(e);
+    e.items.remove(old); applyRepuestoItem(e, r, itemId); recalcRepuesto(e); recalcRepuestoPayment(e);
     audit("REPUESTOS", "ÍTEM", e.numero); return repuesto(e);
   }
   public void deleteRepuestoItem(UUID id, UUID itemId) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
     RepuestoPedidoItem target = e.items.stream().filter(x -> x.id.equals(itemId)).findFirst().orElseThrow(() -> new NotFoundException("El ítem no existe"));
-    e.items.remove(target); recalcRepuesto(e); audit("REPUESTOS", "QUITAR ÍTEM", e.numero);
+    e.items.remove(target); recalcRepuesto(e); recalcRepuestoPayment(e); audit("REPUESTOS", "QUITAR ÍTEM", e.numero);
   }
 
   // ---------- Control de revisión (catálogo con categorías N:M) ----------
