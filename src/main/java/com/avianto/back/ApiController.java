@@ -41,7 +41,6 @@ public class ApiController {
   @DeleteMapping("/motovehiculos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void motoDelete(@PathVariable UUID id){api.deleteMotorcycle(id);}
   @PostMapping("/motovehiculos/{id}/ingreso") public MotorcycleResponse motoIngreso(@PathVariable UUID id,@Valid @RequestBody IntakeRequest r){return api.ingresarMoto(id,r);}
   @PostMapping("/motovehiculos/{id}/entrega") public MotorcycleResponse motoEntrega(@PathVariable UUID id){return api.entregarMoto(id);}
-  @PatchMapping("/motovehiculos/{id}/venta/estado") public MotorcycleResponse ventaState(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.estadoVenta(id,r);}
   @PostMapping("/motovehiculos/{id}/venta/completar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public MotorcycleResponse completarVenta(@PathVariable UUID id){return api.completarVenta(id);}
   @PatchMapping("/motovehiculos/{id}/config-service") public MotorcycleResponse motoConfig(@PathVariable UUID id,@Valid @RequestBody MotoConfigServiceRequest r){return api.updateMotoConfig(id,r);}
 

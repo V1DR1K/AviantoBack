@@ -40,7 +40,7 @@ class OperationalIntegrityTest {
 
     assertTrue(moto.ingresada);
     assertEquals(MotoSection.VENTA, moto.seccion);
-    assertEquals(MotoState.INGRESADA_VENTA.label(), response.estado());
+    assertEquals(MotoState.EN_VENTA.label(), response.estado());
   }
 
   @Test

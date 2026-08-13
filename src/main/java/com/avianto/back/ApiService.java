@@ -147,22 +147,13 @@ public class ApiService {
     MotoSection section = MotoSection.of(r.seccion());
     e.seccion = section;
     e.ingresada = true;
-    e.estadoOperativo = section == MotoSection.TALLER ? MotoState.INGRESADA_TALLER : MotoState.INGRESADA_VENTA;
+    e.estadoOperativo = section == MotoSection.TALLER ? MotoState.INGRESADA_TALLER : MotoState.EN_VENTA;
     audit("Motovehículos", "INGRESAR", e.patente + " -> " + section.label());
     return moto(e);
   }
   public MotorcycleResponse entregarMoto(UUID id) {
     db.get(Motovehiculo.class, id);
     throw new BusinessException(409, "La entrega se realiza aprobando la revisión de la ficha");
-  }
-  public MotorcycleResponse estadoVenta(UUID id, StateRequest request) {
-    Motovehiculo e = db.get(Motovehiculo.class, id);
-    if (e.seccion != MotoSection.VENTA || !e.ingresada) throw new BusinessException(409, "La moto debe estar ingresada en Ventas");
-    MotoState next = MotoState.of(request.estado());
-    if (e.estadoOperativo == MotoState.INGRESADA_VENTA && next == MotoState.EN_VENTA) e.estadoOperativo = next;
-    else throw new BusinessException(422, "Transición de venta inválida");
-    audit("Ventas", "ESTADO", e.patente + " -> " + e.estadoOperativo.label());
-    return moto(e);
   }
   public MotorcycleResponse completarVenta(UUID id) {
     Motovehiculo e = db.get(Motovehiculo.class, id);
@@ -927,7 +918,7 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   public VentaResponse ventas() {
     Map<String, List<VentaMotoResponse>> buckets = new LinkedHashMap<>();
-    List<String> states = List.of("Ingresada Venta", "En venta", "Transferencia en curso", "Vendida");
+    List<String> states = List.of("En venta", "Transferencia en curso", "Vendida");
     states.forEach(state -> buckets.put(state, new ArrayList<>()));
     for (Motovehiculo moto : db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and e.seccion = com.avianto.back.MotoSection.VENTA", Motovehiculo.class, Map.of())) {
       String state = estadoMoto(moto);

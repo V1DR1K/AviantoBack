@@ -17,6 +17,7 @@ For a locally installed PostgreSQL, export the variables from `.env` and run `./
 - Login accepts the user email in `username`. Access JWTs are short-lived; opaque refresh tokens are SHA-256 hashed and persisted, rotated on refresh, and revoked on logout.
 - Deletes are logical (`deleted_at`, `deleted_by`). Configuration records and users enforce their dependency/last-admin rules. Orders preserve their line snapshots and validate motorcycle ownership and state transitions.
 - Exports accept the same filters plus `columns`; PDF and XLSX are generated server-side. Photos are stored as PostgreSQL bytes for the MVP and limited to 5 MB.
+- Entering a motorcycle in `Venta` is atomic: it is immediately available as `En venta`; no intermediate sales state exists.
 
 ## Tests
 
