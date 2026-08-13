@@ -18,6 +18,7 @@ For a locally installed PostgreSQL, export the variables from `.env` and run `./
 - Deletes are logical (`deleted_at`, `deleted_by`). Configuration records and users enforce their dependency/last-admin rules. Orders preserve their line snapshots and validate motorcycle ownership and state transitions.
 - Exports accept the same filters plus `columns`; PDF and XLSX are generated server-side. Photos are stored as PostgreSQL bytes for the MVP and limited to 5 MB.
 - Entering a motorcycle in `Venta` is atomic: it is immediately available as `En venta`; no intermediate sales state exists.
+- Workshop flow: `Ingresada Taller` -> `Pendiente` -> `En proceso` -> `En revisión` -> `Terminada` -> `Entregada`. Approving the review marks the job as `Terminada`; delivery is recorded separately.
 
 ## Tests
 

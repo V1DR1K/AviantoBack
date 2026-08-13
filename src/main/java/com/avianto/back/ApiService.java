@@ -151,13 +151,9 @@ public class ApiService {
     audit("Motovehículos", "INGRESAR", e.patente + " -> " + section.label());
     return moto(e);
   }
-  public MotorcycleResponse entregarMoto(UUID id) {
-    db.get(Motovehiculo.class, id);
-    throw new BusinessException(409, "La entrega se realiza aprobando la revisión de la ficha");
-  }
   public MotorcycleResponse completarVenta(UUID id) {
     Motovehiculo e = db.get(Motovehiculo.class, id);
-    if (e.seccion != MotoSection.VENTA || e.estadoOperativo != MotoState.TRANSFERENCIA_EN_CURSO) throw new BusinessException(409, "La moto no tiene una transferencia en curso");
+    if (e.seccion != MotoSection.VENTA || e.estadoOperativo != MotoState.TRANSFERENCIA_EN_PROCESO) throw new BusinessException(409, "La moto no tiene una transferencia en proceso");
     e.ingresada = false;
     e.estadoOperativo = MotoState.VENDIDA;
     audit("Ventas", "VENDER", e.patente);
@@ -180,7 +176,7 @@ public class ApiService {
     e.marca = b; e.modelo = r.modelo().trim(); e.patente = r.patente().trim().toUpperCase(); e.anio = r.anio(); e.kilometraje = r.kilometraje(); e.observaciones = blank(r.observaciones());
   }
   private void requireTallerIngresada(Motovehiculo moto) {
-    if (moto.seccion != MotoSection.TALLER || !moto.ingresada || !EnumSet.of(MotoState.INGRESADA_TALLER, MotoState.CARGADA, MotoState.EN_PROCESO, MotoState.REVISION).contains(moto.estadoOperativo)) throw new BusinessException(409, "La moto debe estar ingresada en Taller");
+    if (moto.seccion != MotoSection.TALLER || !moto.ingresada || !EnumSet.of(MotoState.INGRESADA_TALLER, MotoState.PENDIENTE, MotoState.EN_PROCESO, MotoState.REVISION, MotoState.TERMINADA).contains(moto.estadoOperativo)) throw new BusinessException(409, "La moto debe estar ingresada en Taller");
   }
 
   private MotorcycleResponse moto(Motovehiculo e) {
@@ -197,9 +193,10 @@ public class ApiService {
     try { return MotoState.of(value); }
     catch (BusinessException ignored) {
       return switch (FichaState.of(value)) {
-        case CARGA -> MotoState.CARGADA;
+        case PENDIENTE -> MotoState.PENDIENTE;
         case EN_PROCESO -> MotoState.EN_PROCESO;
         case REVISION -> MotoState.REVISION;
+        case TERMINADA -> MotoState.TERMINADA;
         case ENTREGADA, CANCELADA -> MotoState.ENTREGADA;
       };
     }
@@ -252,7 +249,7 @@ public class ApiService {
     db.persist(siguiente);
     TransferenciaMoto e = new TransferenciaMoto(); e.motovehiculo = m; e.clienteAnterior = actual.cliente; e.clienteNuevo = nuevo; e.fechaTransferencia = fecha; e.observaciones = blank(r.observaciones()); e.realizadaPor = actor();
     db.persist(e);
-    m.estadoOperativo = MotoState.TRANSFERENCIA_EN_CURSO;
+    m.estadoOperativo = MotoState.TRANSFERENCIA_EN_PROCESO;
     audit("Transferencias", "TRANSFERIR", m.patente + " · " + actual.cliente.nombre + " -> " + nuevo.nombre);
     clearAutocomplete();
     return transfer(e);
@@ -277,7 +274,7 @@ public class ApiService {
     String description = e.motovehiculo.patente + " · " + e.clienteAnterior.nombre + " -> " + e.clienteNuevo.nombre;
     UUID motoId = e.motovehiculo.id;
     deleted(e);
-    if (e.motovehiculo.seccion == MotoSection.VENTA && e.motovehiculo.estadoOperativo == MotoState.TRANSFERENCIA_EN_CURSO) e.motovehiculo.estadoOperativo = MotoState.EN_VENTA;
+    if (e.motovehiculo.seccion == MotoSection.VENTA && e.motovehiculo.estadoOperativo == MotoState.TRANSFERENCIA_EN_PROCESO) e.motovehiculo.estadoOperativo = MotoState.EN_VENTA;
     rebuildOwnership(motoId);
     audit("Transferencias", "ELIMINAR", description);
     clearAutocomplete();
@@ -391,21 +388,31 @@ PropietarioMoto o = propietarioActual(m.id);
     assertNoOpenFicha(e.motovehiculo.id, null);
     e.numero = "F-" + db.nextVal("ficha_numero_seq");
     db.persist(e);
-    e.motovehiculo.estadoOperativo = MotoState.CARGADA;
+    e.motovehiculo.estadoOperativo = MotoState.PENDIENTE;
     audit("Fichas", "CREAR", e.numero);
     return ficha(e);
   }
-  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); copy(r, e); requireAtLeastOneTrabajo(e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.CARGA) e.motovehiculo.estadoOperativo = MotoState.CARGADA; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
-  public void deleteFicha(UUID id) { Ficha e = db.get(Ficha.class, id); if (e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha entregada"); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
+  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); copy(r, e); requireAtLeastOneTrabajo(e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.PENDIENTE) e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
+  public void deleteFicha(UUID id) { Ficha e = db.get(Ficha.class, id); if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha finalizada"); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
   public FichaResponse fichaState(UUID id, StateRequest r) {
     Ficha e = db.get(Ficha.class, id); FichaState next = FichaState.of(r.estado());
-    if (next == FichaState.CANCELADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) { e.estado = next; syncMotoAfterFichaCancellation(e); }
-    else if (e.estado == FichaState.CARGA && next == FichaState.EN_PROCESO && !e.trabajos.isEmpty()) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
+    if (next == FichaState.CANCELADA && e.estado != FichaState.TERMINADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) { e.estado = next; syncMotoAfterFichaCancellation(e); }
+    else if (e.estado == FichaState.PENDIENTE && next == FichaState.EN_PROCESO && !e.trabajos.isEmpty()) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     else if (e.estado == FichaState.EN_PROCESO && next == FichaState.REVISION && trabajosFinalizados(e)) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.REVISION; }
     else if (e.estado == FichaState.REVISION && next == FichaState.EN_PROCESO) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
-    else if (e.estado == FichaState.EN_PROCESO && next == FichaState.CARGA) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.CARGADA; }
+    else if (e.estado == FichaState.EN_PROCESO && next == FichaState.PENDIENTE) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; }
     else throw new BusinessException(422, "Transición de ficha inválida");
     audit("Fichas", "ESTADO", e.numero + " -> " + e.estado.label()); return ficha(e);
+  }
+  public FichaResponse entregarFicha(UUID id) {
+    Ficha e = db.get(Ficha.class, id);
+    if (e.estado != FichaState.TERMINADA) throw new BusinessException(409, "La ficha debe estar terminada para entregar la moto");
+    e.estado = FichaState.ENTREGADA;
+    if (e.fechaEntregaReal == null) e.fechaEntregaReal = today();
+    e.motovehiculo.ingresada = false;
+    e.motovehiculo.estadoOperativo = MotoState.ENTREGADA;
+    audit("Fichas", "ENTREGAR", e.numero);
+    return ficha(e);
   }
   public FichaResponse fichaPago(UUID id, PagoRequest r) {
     Ficha e = db.get(Ficha.class, id);
@@ -413,7 +420,7 @@ PropietarioMoto o = propietarioActual(m.id);
     applyFichaPayment(e, PagoState.of(r.estadoPago()), r.itemIds());
     audit("Fichas", "PAGO", e.numero + " -> " + e.estadoPago.label()); return ficha(e);
   }
-  private void assertEditable(Ficha e) { if (e.estado == FichaState.ENTREGADA || e.estado == FichaState.CANCELADA) throw new BusinessException(409, "La ficha ya finalizó"); }
+  private void assertEditable(Ficha e) { if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA || e.estado == FichaState.CANCELADA) throw new BusinessException(409, "La ficha ya finalizó"); }
   private void copy(FichaRequest r, Ficha e) {
     Cliente c = db.get(Cliente.class, r.clienteId());
     Motovehiculo m = db.get(Motovehiculo.class, r.motoId());
@@ -777,10 +784,8 @@ PropietarioMoto o = propietarioActual(m.id);
       if (!service.motovehiculo.id.equals(f.motovehiculo.id) || service.ficha != null) throw new BusinessException(422, "El service no puede asociarse a esta ficha");
       service.ficha = f;
     }
-    if (f.estado != FichaState.ENTREGADA && f.estado != FichaState.CANCELADA) { f.estado = FichaState.ENTREGADA; }
-    if (f.fechaEntregaReal == null) f.fechaEntregaReal = today();
-    f.motovehiculo.ingresada = false;
-    f.motovehiculo.estadoOperativo = MotoState.ENTREGADA;
+    f.estado = FichaState.TERMINADA;
+    f.motovehiculo.estadoOperativo = MotoState.TERMINADA;
     audit("REVISION", "APROBAR", f.numero);
     return revisionDto(rev);
   }
@@ -874,7 +879,7 @@ PropietarioMoto o = propietarioActual(m.id);
     return List.of(
       new ReportResponse("Fichas último mes", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.fechaIngreso >= :desde", ps))),
       new ReportResponse("Motos con service", BigDecimal.valueOf(nextServices().stream().filter(row -> !row.sinReferencia()).count())),
-      new ReportResponse("En proceso", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado in ('CARGA','EN_PROCESO','REVISION')", Map.of())))
+      new ReportResponse("En proceso", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado in ('PENDIENTE','EN_PROCESO','REVISION','TERMINADA')", Map.of())))
     );
   }
   public List<ReportResponse> evolution() {
@@ -897,7 +902,7 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   public TallerResponse taller() {
     Map<String, List<TallerMotoResponse>> buckets = new LinkedHashMap<>();
-    List<String> states = List.of("Ingresada Taller", "Cargada", "En proceso", "En revisión", "Entregada");
+    List<String> states = List.of("Ingresada Taller", "Pendiente", "En proceso", "En revisión", "Terminada", "Entregada");
     states.forEach(state -> buckets.put(state, new ArrayList<>()));
     for (Motovehiculo moto : db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and e.seccion = com.avianto.back.MotoSection.TALLER", Motovehiculo.class, Map.of())) {
       Ficha ficha = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", moto.id));
@@ -918,7 +923,7 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   public VentaResponse ventas() {
     Map<String, List<VentaMotoResponse>> buckets = new LinkedHashMap<>();
-    List<String> states = List.of("En venta", "Transferencia en curso", "Vendida");
+    List<String> states = List.of("En venta", "Transferencia en proceso", "Vendida");
     states.forEach(state -> buckets.put(state, new ArrayList<>()));
     for (Motovehiculo moto : db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and e.seccion = com.avianto.back.MotoSection.VENTA", Motovehiculo.class, Map.of())) {
       String state = estadoMoto(moto);

@@ -44,32 +44,29 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void deliveryRejectsOpenWorkshopOperations() {
+  void deliveryRequiresAFinishedFicha() {
     UUID motoId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId);
-    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
-    when(db.count(contains("from Ficha"), anyMap())).thenReturn(1L);
+    Cliente c = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.EN_PROCESO;
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
-    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
+    assertThrows(BusinessException.class, () -> api.entregarFicha(ficha.id));
   }
 
   @Test
-  void deliveryRequiresAnApprovedRevision() {
+  void deliveringAFinishedFichaReleasesTheMotorcycle() {
     UUID motoId = UUID.randomUUID();
-    Motovehiculo moto = moto(motoId);
-    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
-    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
-    assertTrue(moto.ingresada);
-  }
+    Motovehiculo moto = moto(motoId); moto.estadoOperativo = MotoState.TERMINADA;
+    Cliente c = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.TERMINADA;
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
-  @Test
-  void deliveryMustBeCompletedByApprovingTheRevision() {
-    UUID motoId = UUID.randomUUID();
-    Motovehiculo moto = moto(motoId);
-    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    api.entregarFicha(ficha.id);
 
-    assertThrows(BusinessException.class, () -> api.entregarMoto(motoId));
-    assertTrue(moto.ingresada);
+    assertEquals(FichaState.ENTREGADA, ficha.estado);
+    assertFalse(moto.ingresada);
+    assertEquals(MotoState.ENTREGADA, moto.estadoOperativo);
   }
 
   @Test

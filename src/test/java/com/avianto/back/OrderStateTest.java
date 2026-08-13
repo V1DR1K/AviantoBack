@@ -5,14 +5,14 @@ import org.junit.jupiter.api.Test;
 
 class OrderStateTest {
   @Test void fichaLabelsAndMapping() {
-    assertEquals(FichaState.CARGA, FichaState.of("Cargada"));
-    assertEquals(FichaState.CARGA, FichaState.of("Carga"));
+    assertEquals(FichaState.PENDIENTE, FichaState.of("Pendiente"));
     assertEquals(FichaState.EN_PROCESO, FichaState.of("En proceso"));
-    assertEquals(FichaState.REVISION, FichaState.of("Revisión"));
+    assertEquals(FichaState.REVISION, FichaState.of("En revisión"));
+    assertEquals(FichaState.TERMINADA, FichaState.of("Terminada"));
     assertEquals(FichaState.ENTREGADA, FichaState.of("Entregada"));
     assertEquals(FichaState.CANCELADA, FichaState.of("Cancelada"));
     assertEquals("En proceso", FichaState.EN_PROCESO.label());
-    assertEquals("Cargada", FichaState.CARGA.label());
+    assertEquals("Pendiente", FichaState.PENDIENTE.label());
     assertThrows(BusinessException.class, () -> FichaState.of("Borrador"));
   }
 
@@ -21,7 +21,9 @@ class OrderStateTest {
     assertEquals("Disponible", MotoState.DISPONIBLE.label());
     assertEquals(MotoState.INGRESADA_TALLER, MotoState.of("Ingresada Taller"));
     assertEquals(MotoState.EN_VENTA, MotoState.of("En venta"));
-    assertEquals(MotoState.TRANSFERENCIA_EN_CURSO, MotoState.of("Transferencia en curso"));
+    assertEquals(MotoState.PENDIENTE, MotoState.of("Pendiente"));
+    assertEquals(MotoState.TERMINADA, MotoState.of("Terminada"));
+    assertEquals(MotoState.TRANSFERENCIA_EN_PROCESO, MotoState.of("Transferencia en proceso"));
     assertEquals("Vendida", MotoState.VENDIDA.label());
   }
 
