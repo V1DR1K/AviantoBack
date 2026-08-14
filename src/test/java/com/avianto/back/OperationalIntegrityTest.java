@@ -12,6 +12,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.ResponseEntity;
 import org.springframework.security.crypto.password.PasswordEncoder;
 
 class OperationalIntegrityTest {
@@ -158,6 +159,48 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void fichaSummaryOnlyReturnsLinkedRepuestoOrders() {
+    UUID fichaId = UUID.randomUUID();
+    Ficha ficha = new Ficha(); ficha.id = fichaId;
+    Motovehiculo moto = moto(UUID.randomUUID());
+    Cliente cliente = cliente(UUID.randomUUID());
+    RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.ficha = ficha; pedido.motovehiculo = moto; pedido.cliente = cliente;
+    when(db.get(Ficha.class, fichaId)).thenReturn(ficha);
+    when(db.all(contains("e.ficha.id=:ficha"), eq(RepuestoPedido.class), anyMap())).thenReturn(List.of(pedido));
+
+    List<ApiDtos.RepuestoResponse> response = api.repuestosFicha(fichaId);
+
+    assertEquals(1, response.size());
+    assertEquals(fichaId, response.getFirst().fichaId());
+    verify(db).all(contains("e.ficha.id=:ficha"), eq(RepuestoPedido.class), anyMap());
+  }
+
+  @Test
+  void fichaPdfIncludesTheLinkedRepuestoSummary() throws Exception {
+    UUID fichaId = UUID.randomUUID();
+    Motovehiculo moto = moto(UUID.randomUUID()); moto.patente = "AA123AA"; moto.modelo = "Wave";
+    Cliente cliente = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = fichaId; ficha.numero = "F-1"; ficha.cliente = cliente; ficha.motovehiculo = moto; ficha.fechaIngreso = LocalDate.now(); ficha.total = BigDecimal.valueOf(100); ficha.descuentoGlobal = BigDecimal.ZERO;
+    FichaTrabajo trabajo = new FichaTrabajo(); trabajo.descripcion = "Cambio de aceite"; trabajo.precioAplicado = BigDecimal.valueOf(100); trabajo.descuento = BigDecimal.ZERO; trabajo.subtotal = BigDecimal.valueOf(100); ficha.trabajos.add(trabajo);
+    RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.ficha = ficha; pedido.motovehiculo = moto; pedido.cliente = cliente; pedido.total = BigDecimal.valueOf(50);
+    RepuestoPedidoItem item = new RepuestoPedidoItem(); item.descripcion = "Filtro"; item.tipo = RepuestoCategoria.REPUESTO; item.cantidad = BigDecimal.ONE; item.precio = BigDecimal.valueOf(50); item.subtotal = BigDecimal.valueOf(50); pedido.items.add(item);
+    when(db.get(Ficha.class, fichaId)).thenReturn(ficha);
+    when(db.all(contains("e.ficha.id=:ficha"), eq(RepuestoPedido.class), anyMap())).thenReturn(List.of(pedido));
+
+    ResponseEntity<byte[]> response = new ApiController(api, mock(AuthService.class)).pdf(fichaId);
+
+    assertEquals("application/pdf", response.getHeaders().getContentType().toString());
+    assertTrue(response.getBody() != null && response.getBody().length > 100);
+    assertEquals("%PDF", new String(response.getBody(), 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1));
+    com.lowagie.text.pdf.PdfReader pdf = new com.lowagie.text.pdf.PdfReader(response.getBody());
+    String content = new com.lowagie.text.pdf.parser.PdfTextExtractor(pdf).getTextFromPage(1);
+    pdf.close();
+    assertTrue(content.contains("R-1"));
+    assertTrue(content.contains("Filtro"));
+    assertTrue(content.contains("TOTAL PRESUPUESTO"));
+  }
+
+  @Test
   void serviceCannotReferenceAnotherMotorcycleFicha() {
     UUID motoId = UUID.randomUUID(), fichaId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId); Ficha ficha = new Ficha(); ficha.motovehiculo = moto(UUID.randomUUID());
@@ -184,17 +227,18 @@ class OperationalIntegrityTest {
   @Test
   void transferClosesTheCurrentPeriodAndCreatesTheNewOwner() {
     UUID motoId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
-     Motovehiculo moto = moto(motoId); moto.seccion = MotoSection.VENTA; moto.estadoOperativo = MotoState.EN_VENTA; moto.ingresada = true; moto.patente = "AA123AA"; moto.modelo = "FZ"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand;
+    LocalDate transferDate = LocalDate.now().minusDays(1);
+    Motovehiculo moto = moto(motoId); moto.seccion = MotoSection.VENTA; moto.estadoOperativo = MotoState.EN_VENTA; moto.ingresada = true; moto.patente = "AA123AA"; moto.modelo = "FZ"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand;
     Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId); newClient.nombre = "Nuevo cliente";
-    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = oldClient; current.fechaDesde = LocalDate.now().minusDays(10);
+    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = oldClient; current.fechaDesde = transferDate.minusDays(10);
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
     when(db.get(Cliente.class, newId)).thenReturn(newClient);
     when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(current);
 
-    ApiDtos.TransferResponse response = api.createTransfer(new ApiDtos.TransferRequest(motoId, newId, LocalDate.now(), "Venta"));
+    ApiDtos.TransferResponse response = api.createTransfer(new ApiDtos.TransferRequest(motoId, newId, transferDate, "Venta"));
 
     assertEquals(newId, response.clienteNuevoId());
-    assertEquals(LocalDate.now().minusDays(1), current.fechaHasta);
+    assertEquals(transferDate.minusDays(1), current.fechaHasta);
     verify(db).flush();
     verify(db).persist(any(PropietarioMoto.class));
     verify(db).persist(any(TransferenciaMoto.class));

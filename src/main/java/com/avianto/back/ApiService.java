@@ -381,6 +381,10 @@ PropietarioMoto o = propietarioActual(m.id);
     return page("from Ficha e join e.cliente join e.motovehiculo", w, "from Ficha e", ps, page, size, sortable(sort, Set.of("createdAt", "fechaIngreso", "estado", "estadoPago", "total", "numero"), "fechaIngreso"), dir, x -> ficha((Ficha) x));
   }
   public FichaResponse ficha(UUID id) { return ficha(db.get(Ficha.class, id)); }
+  public List<RepuestoResponse> repuestosFicha(UUID fichaId) {
+    db.get(Ficha.class, fichaId);
+    return db.all("select distinct e from RepuestoPedido e join fetch e.motovehiculo join fetch e.cliente left join fetch e.items where e.ficha.id=:ficha and e.deletedAt is null order by e.fecha desc, e.createdAt desc", RepuestoPedido.class, Map.of("ficha", fichaId)).stream().map(this::repuesto).toList();
+  }
   public FichaResponse createFicha(FichaRequest r) {
     Ficha e = new Ficha(); copy(r, e);
     requireTallerIngresada(e.motovehiculo);

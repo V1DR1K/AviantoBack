@@ -2,7 +2,12 @@ package com.avianto.back;
 
 import static com.avianto.back.ApiDtos.*;
 import com.lowagie.text.Document;
+import com.lowagie.text.Element;
+import com.lowagie.text.Font;
 import com.lowagie.text.Paragraph;
+import com.lowagie.text.Phrase;
+import com.lowagie.text.pdf.PdfPCell;
+import com.lowagie.text.pdf.PdfPTable;
 import com.lowagie.text.pdf.PdfWriter;
 import jakarta.validation.Valid;
 import org.apache.poi.xssf.usermodel.XSSFWorkbook;
@@ -71,6 +76,7 @@ public class ApiController {
   @PatchMapping("/fichas/{id}/estado") public FichaResponse fichaState(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.fichaState(id,r);}
   @PostMapping("/fichas/{id}/entregar") public FichaResponse fichaEntrega(@PathVariable UUID id){return api.entregarFicha(id);}
   @PatchMapping("/fichas/{id}/pago") public FichaResponse fichaPago(@PathVariable UUID id,@Valid @RequestBody PagoRequest r){return api.fichaPago(id,r);}
+  @GetMapping("/fichas/{id}/repuestos") public List<RepuestoResponse> fichaRepuestos(@PathVariable UUID id){return api.repuestosFicha(id);}
 
   @GetMapping("/fichas/{id}/trabajos") public List<FichaTrabajoResponse> fichaTrabajos(@PathVariable UUID id){return api.ficha(id).trabajos();}
   @PostMapping("/fichas/{id}/trabajos") @ResponseStatus(HttpStatus.CREATED) public FichaResponse addTrabajo(@PathVariable UUID id,@Valid @RequestBody FichaTrabajoRequest r){return api.addTrabajo(id,r);}
@@ -80,7 +86,7 @@ public class ApiController {
 
   @PostMapping("/fichas/{id}/fotos") @ResponseStatus(HttpStatus.CREATED) public PhotoResponse photo(@PathVariable UUID id,@Valid @RequestBody PhotoRequest r){return api.createPhoto(id,r);}
   @GetMapping("/fichas/{id}/fotos/{fotoId}") public ResponseEntity<byte[]> photo(@PathVariable UUID id,@PathVariable UUID fotoId){FichaFoto photo=api.photo(id,fotoId);return ResponseEntity.ok().contentType(MediaType.parseMediaType(photo.contentType)).body(photo.content);}
-  @GetMapping(value="/fichas/{id}/pdf",produces=MediaType.APPLICATION_PDF_VALUE) public ResponseEntity<byte[]> pdf(@PathVariable UUID id)throws Exception{return attachment("ficha-"+id+".pdf",MediaType.APPLICATION_PDF,pdf(api.ficha(id)));}
+  @GetMapping(value="/fichas/{id}/pdf",produces=MediaType.APPLICATION_PDF_VALUE) public ResponseEntity<byte[]> pdf(@PathVariable UUID id)throws Exception{return attachment("ficha-"+id+".pdf",MediaType.APPLICATION_PDF,pdf(api.ficha(id),api.repuestosFicha(id)));}
 
   // ---------- Revisión final de entrega ----------
   @GetMapping("/fichas/{id}/revision") public RevisionResponse revision(@PathVariable UUID id){return api.revision(id);}
@@ -211,6 +217,59 @@ public class ApiController {
   private String fichaTrabajos(List<FichaTrabajoResponse> items){if(items==null||items.isEmpty())return "";return String.join(" | ",items.stream().map(i->i.descripcion()).toList());}
   private String repuestoItems(List<RepuestoItemResponse> items){if(items==null||items.isEmpty())return "—";return String.join(" | ",items.stream().map(i->DecimalFormat(i.cantidad())+"x "+i.descripcion()).toList());}
   private String DecimalFormat(BigDecimal value){return value==null?"0":value.stripTrailingZeros().toPlainString();}
-  private byte[] pdf(FichaResponse o)throws Exception{ByteArrayOutputStream out=new ByteArrayOutputStream();Document d=new Document();PdfWriter.getInstance(d,out);d.open();d.add(new Paragraph("AVIANTO - Ficha de trabajo"));d.add(new Paragraph("Ficha: "+o.numero()+"    Estado: "+o.estado()+"    Pago: "+o.estadoPago()));d.add(new Paragraph("Cliente: "+o.cliente()+"    Moto: "+o.moto()+" ("+o.patente()+")"));d.add(new Paragraph("Ingreso: "+o.fechaIngreso()+"    Entrega estimada: "+o.fechaEntregaEstimada()+"    Vencimiento: "+o.vencimiento()));d.add(new Paragraph(" "));for(FichaTrabajoResponse i:o.trabajos())d.add(new Paragraph(i.descripcion()+"  $"+i.subtotal()));d.add(new Paragraph("TOTAL: $"+o.total()));d.close();return out.toByteArray();}
+  private byte[] pdf(FichaResponse ficha,List<RepuestoResponse> repuestos)throws Exception{
+    Font title=new Font(Font.HELVETICA,18,Font.BOLD), heading=new Font(Font.HELVETICA,12,Font.BOLD), body=new Font(Font.HELVETICA,9), muted=new Font(Font.HELVETICA,8,Font.NORMAL);
+    ByteArrayOutputStream out=new ByteArrayOutputStream(); Document document=new Document(); PdfWriter.getInstance(document,out); document.open();
+    Paragraph brand=new Paragraph("AVIANTO",title); brand.setAlignment(Element.ALIGN_LEFT); document.add(brand);
+    document.add(new Paragraph("Resumen de ficha de trabajo",heading));
+    document.add(new Paragraph("Ficha "+ficha.numero()+" · Estado: "+ficha.estado()+" · Pago: "+ficha.estadoPago(),body));
+    document.add(new Paragraph(" "));
+    PdfPTable datos=table(new float[]{1f,1f},heading,"Cliente","Motovehículo");
+    cell(datos,"Cliente\n"+text(ficha.cliente()),body); cell(datos,"Moto\n"+text(ficha.moto()),body);
+    cell(datos,"Dominio\n"+text(ficha.patente()),body); cell(datos,"Ingreso\n"+date(ficha.fechaIngreso()),body);
+    cell(datos,"Entrega estimada\n"+date(ficha.fechaEntregaEstimada()),body); cell(datos,"Kilometraje de ingreso\n"+(ficha.kilometrajeIngreso()==null?"—":ficha.kilometrajeIngreso()+" km"),body);
+    document.add(datos);
+    if(ficha.observaciones()!=null&&!ficha.observaciones().isBlank()){
+      document.add(new Paragraph("Observaciones",heading)); document.add(new Paragraph(ficha.observaciones(),body));
+    }
+    document.add(new Paragraph("Trabajos y servicios",heading));
+    PdfPTable trabajos=table(new float[]{3.2f,1.1f,1.1f,1.1f,1.1f},heading,"Descripción","Estado","Precio","Desc.","Subtotal");
+    for(FichaTrabajoResponse trabajo:ficha.trabajos()){
+      cell(trabajos,text(trabajo.descripcion()),body); cell(trabajos,text(trabajo.estadoTrabajo()),body); cell(trabajos,currency(trabajo.precioUnitario()),body); cell(trabajos,currency(trabajo.descuento()),body); cell(trabajos,currency(trabajo.subtotal()),body);
+      if(trabajo.observacionTrabajo()!=null&&!trabajo.observacionTrabajo().isBlank()) cellSpan(trabajos,"Observación: "+trabajo.observacionTrabajo(),muted,5);
+    }
+    document.add(trabajos);
+    BigDecimal subtotalTrabajos=ficha.trabajos().stream().filter(trabajo->!"Cancelado".equals(trabajo.estadoTrabajo())).map(FichaTrabajoResponse::subtotal).reduce(BigDecimal.ZERO,BigDecimal::add);
+    BigDecimal despuesDescuento=subtotalTrabajos.subtract(ficha.descuentoGlobal()).max(BigDecimal.ZERO);
+    BigDecimal iva=ficha.iva()?ficha.total().subtract(despuesDescuento):BigDecimal.ZERO;
+    document.add(new Paragraph("Subtotal trabajos: "+currency(subtotalTrabajos),body));
+    if(ficha.descuentoGlobal().signum()>0) document.add(new Paragraph("Descuento global: "+currency(ficha.descuentoGlobal()),body));
+    if(ficha.iva()) document.add(new Paragraph("IVA 21%: "+currency(iva),body));
+    document.add(new Paragraph("Total ficha: "+currency(ficha.total()),heading));
+    document.add(new Paragraph(" "));
+    document.add(new Paragraph("Pedidos de repuestos y accesorios vinculados",heading));
+    BigDecimal totalRepuestos=BigDecimal.ZERO;
+    if(repuestos.isEmpty()) document.add(new Paragraph("No hay pedidos vinculados a esta ficha.",muted));
+    for(RepuestoResponse pedido:repuestos){
+      document.add(new Paragraph(pedido.numero()+" · "+pedido.estado()+" · Proveedor: "+text(pedido.proveedor()),body));
+      if(pedido.observaciones()!=null&&!pedido.observaciones().isBlank()) document.add(new Paragraph("Observación del pedido: "+pedido.observaciones(),muted));
+      PdfPTable items=table(new float[]{2.7f,1f,.7f,1.2f,1f,1.1f},heading,"Ítem","Tipo","Cant.","Estado","Precio","Subtotal");
+      for(RepuestoItemResponse item:pedido.items()){
+        cell(items,text(item.descripcion()),body); cell(items,item.tipo().label(),body); cell(items,DecimalFormat(item.cantidad()),body); cell(items,text(item.estado()),body); cell(items,currency(item.precio()),body); cell(items,currency(item.subtotal()),body);
+        if(item.observaciones()!=null&&!item.observaciones().isBlank()) cellSpan(items,"Observación: "+item.observaciones(),muted,6);
+      }
+      document.add(items);
+      if(!"Cancelado".equals(pedido.estado())) totalRepuestos=totalRepuestos.add(pedido.total());
+    }
+    document.add(new Paragraph("Total repuestos vinculados: "+currency(totalRepuestos),body));
+    document.add(new Paragraph("TOTAL PRESUPUESTO: "+currency(ficha.total().add(totalRepuestos)),title));
+    document.close(); return out.toByteArray();
+  }
+  private PdfPTable table(float[] widths,Font font,String... headers)throws Exception{PdfPTable table=new PdfPTable(widths);table.setWidthPercentage(100);for(String header:headers){PdfPCell cell=new PdfPCell(new Phrase(header,font));cell.setHorizontalAlignment(Element.ALIGN_CENTER);table.addCell(cell);}return table;}
+  private void cell(PdfPTable table,String value,Font font){table.addCell(new PdfPCell(new Phrase(value,font)));}
+  private void cellSpan(PdfPTable table,String value,Font font,int columns){PdfPCell cell=new PdfPCell(new Phrase(value,font));cell.setColspan(columns);table.addCell(cell);}
+  private String currency(BigDecimal value){return "$ "+(value==null?BigDecimal.ZERO:value).setScale(2,java.math.RoundingMode.HALF_UP).toPlainString();}
+  private String date(LocalDate value){return value==null?"—":value.toString();}
+  private String text(String value){return value==null||value.isBlank()?"—":value.trim();}
   private ResponseEntity<byte[]> attachment(String name,MediaType type,byte[] body){return ResponseEntity.ok().contentType(type).header(HttpHeaders.CONTENT_DISPOSITION,"attachment; filename=\""+name+"\"").body(body);}
 }
