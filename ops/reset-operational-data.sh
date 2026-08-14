@@ -1,7 +1,7 @@
-#!/usr/bin/env bash
-set -euo pipefail
+#!/bin/sh
+set -eu
 
-if [[ "${RESET_OPERATIONAL_DATA:-}" != "YES" ]]; then
+if [ "${RESET_OPERATIONAL_DATA:-}" != "YES" ]; then
   printf '%s\n' 'Refusing to reset data. Set RESET_OPERATIONAL_DATA=YES explicitly.' >&2
   exit 2
 fi
@@ -21,6 +21,7 @@ BEGIN;
 
 DELETE FROM revision_control;
 DELETE FROM ficha_foto;
+DELETE FROM pago;
 DELETE FROM repuesto_pedido_item;
 DELETE FROM service_moto;
 DELETE FROM auditoria;

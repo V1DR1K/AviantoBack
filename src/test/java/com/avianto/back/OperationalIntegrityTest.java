@@ -133,50 +133,78 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void fichaPaymentAcceptsPendingWorkBeforeCompletion() {
-    Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE);
+  void fichaPaymentAccumulatesExactAmountsAndExposesBalance() {
+    Ficha ficha = fichaParaPago("500000.00");
+    when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);
     when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
-    ApiDtos.FichaResponse response = api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Pagado", null));
+    ApiDtos.PagoResponse first = api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("200000.00"), LocalDate.now().minusDays(1), "Transferencia"));
+    ApiDtos.PagoResponse second = api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("300000.00"), LocalDate.now(), "Efectivo"));
+    ApiDtos.FichaResponse response = api.ficha(ficha.id);
 
-    assertTrue(ficha.trabajos.getFirst().pagado);
+    assertEquals(new BigDecimal("200000.00"), first.monto());
+    assertEquals("Transferencia", first.medioPago());
+    assertEquals(new BigDecimal("300000.00"), second.monto());
     assertEquals(PagoState.PAGADO, ficha.estadoPago);
-    assertEquals("Pagado", response.estadoPago());
+    assertEquals(new BigDecimal("500000.00"), response.montoCobrado());
+    assertEquals(BigDecimal.ZERO.setScale(2), response.saldoPendiente());
   }
 
   @Test
-  void fichaPaymentCanBePartialBeforeEveryWorkIsCompleted() {
-    Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE, TrabajoState.REALIZADO);
+  void fichaPaymentRejectsExcessAndAnnullingItRestoresTheBalance() {
+    Ficha ficha = fichaParaPago("500000.00");
+    when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);
     when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
-    ApiDtos.FichaResponse response = api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Parcial", List.of(ficha.trabajos.getFirst().id)));
+    ApiDtos.PagoResponse payment = api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("200000.00"), null, null));
+    assertThrows(BusinessException.class, () -> api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("300000.01"), null, null)));
+    ApiDtos.PagoResponse annulled = api.anularFichaPago(ficha.id, payment.id());
+    ApiDtos.FichaResponse response = api.ficha(ficha.id);
 
-    assertTrue(ficha.trabajos.getFirst().pagado);
-    assertFalse(ficha.trabajos.getLast().pagado);
+    assertTrue(annulled.anulado());
+    assertEquals(PagoState.NO_PAGADO, ficha.estadoPago);
+    assertEquals(BigDecimal.ZERO.setScale(2), response.montoCobrado());
+    assertEquals(new BigDecimal("500000.00"), response.saldoPendiente());
+  }
+
+  @Test
+  void repuestoPaymentUsesItsOwnExactBalance() {
+    RepuestoPedido pedido = repuestoParaPago("500000.00");
+    when(db.getForUpdate(RepuestoPedido.class, pedido.id)).thenReturn(pedido);
+    when(db.get(RepuestoPedido.class, pedido.id)).thenReturn(pedido);
+
+    api.registrarRepuestoPago(pedido.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("200000.00"), LocalDate.now(), "Mercado Pago"));
+    ApiDtos.RepuestoResponse response = api.repuesto(pedido.id);
+
+    assertEquals(PagoState.PARCIAL, pedido.estadoPago);
+    assertEquals(new BigDecimal("200000.00"), response.montoCobrado());
+    assertEquals(new BigDecimal("300000.00"), response.saldoPendiente());
+  }
+
+  @Test
+  void paidFichaCannotBeCancelledAndPaymentsCannotUseFutureDates() {
+    Ficha ficha = fichaParaPago("100.00"); ficha.estado = FichaState.EN_PROCESO;
+    when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("50.00"), null, null));
+
+    assertThrows(BusinessException.class, () -> api.fichaState(ficha.id, new ApiDtos.StateRequest("Cancelada")));
+    assertThrows(BusinessException.class, () -> api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(BigDecimal.ZERO, null, null)));
+    assertThrows(BusinessException.class, () -> api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("10.00"), LocalDate.now().plusDays(1), null)));
+  }
+
+  @Test
+  void paymentStatusIsPartialAfterOneOfSeveralReceipts() {
+    Ficha ficha = fichaParaPago("500000.00");
+    when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("200000.00"), null, "Débito"));
+    ApiDtos.FichaResponse response = api.ficha(ficha.id);
+
     assertEquals(PagoState.PARCIAL, ficha.estadoPago);
     assertEquals("Parcial", response.estadoPago());
-  }
-
-  @Test
-  void advancePaymentSurvivesReturningWorkToPending() {
-    Ficha ficha = fichaConTrabajos(TrabajoState.REALIZADO);
-    ficha.estado = FichaState.EN_PROCESO;
-    ficha.motovehiculo.estadoOperativo = MotoState.EN_PROCESO;
-    ficha.trabajos.getFirst().pagado = true;
-    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
-
-    api.trabajoState(ficha.id, ficha.trabajos.getFirst().id, new ApiDtos.StateRequest("Pendiente"));
-
-    assertTrue(ficha.trabajos.getFirst().pagado);
-    assertEquals(PagoState.PAGADO, ficha.estadoPago);
-  }
-
-  @Test
-  void fichaPaymentRejectsACompletedPaymentWhenEveryWorkIsCancelled() {
-    Ficha ficha = fichaConTrabajos(TrabajoState.CANCELADO);
-    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
-
-    assertThrows(BusinessException.class, () -> api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Pagado", null)));
   }
 
   @Test
@@ -206,6 +234,7 @@ class OperationalIntegrityTest {
   void resetScriptIsExplicitAndDoesNotCascade() throws Exception {
     String script = java.nio.file.Files.readString(java.nio.file.Path.of("ops/reset-operational-data.sh"));
     assertTrue(script.contains("RESET_OPERATIONAL_DATA=YES"));
+    assertTrue(script.contains("DELETE FROM pago;"));
     assertFalse(script.toUpperCase(Locale.ROOT).contains("CASCADE"));
   }
 
@@ -407,6 +436,8 @@ class OperationalIntegrityTest {
     }
     return ficha;
   }
+  private static Ficha fichaParaPago(String total) { Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE); ficha.total = new BigDecimal(total); return ficha; }
+  private static RepuestoPedido repuestoParaPago(String total) { RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.motovehiculo = moto(UUID.randomUUID()); pedido.cliente = cliente(UUID.randomUUID()); pedido.total = new BigDecimal(total); return pedido; }
   private static Cliente cliente(UUID id) { Cliente c = new Cliente(); c.id = id; c.nombre = "Cliente"; return c; }
   private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; m.marca = new MarcaMoto(); m.marca.id = UUID.randomUUID(); m.marca.nombre = "Honda"; return m; }
 }

@@ -75,7 +75,9 @@ public class ApiController {
   @DeleteMapping("/fichas/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void fichaDelete(@PathVariable UUID id){api.deleteFicha(id);}
   @PatchMapping("/fichas/{id}/estado") public FichaResponse fichaState(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.fichaState(id,r);}
   @PostMapping("/fichas/{id}/entregar") public FichaResponse fichaEntrega(@PathVariable UUID id){return api.entregarFicha(id);}
-  @PatchMapping("/fichas/{id}/pago") public FichaResponse fichaPago(@PathVariable UUID id,@Valid @RequestBody PagoRequest r){return api.fichaPago(id,r);}
+  @GetMapping("/fichas/{id}/pagos") public List<PagoResponse> fichaPagos(@PathVariable UUID id){return api.fichaPagos(id);}
+  @PostMapping("/fichas/{id}/pagos") @ResponseStatus(HttpStatus.CREATED) public PagoResponse fichaPago(@PathVariable UUID id,@Valid @RequestBody PagoRegistroRequest r){return api.registrarFichaPago(id,r);}
+  @PostMapping("/fichas/{id}/pagos/{pagoId}/anular") public PagoResponse anularFichaPago(@PathVariable UUID id,@PathVariable UUID pagoId){return api.anularFichaPago(id,pagoId);}
   @GetMapping("/fichas/{id}/repuestos") public List<RepuestoResponse> fichaRepuestos(@PathVariable UUID id){return api.repuestosFicha(id);}
 
   @GetMapping("/fichas/{id}/trabajos") public List<FichaTrabajoResponse> fichaTrabajos(@PathVariable UUID id){return api.ficha(id).trabajos();}
@@ -100,7 +102,9 @@ public class ApiController {
   @PutMapping("/repuestos/{id}") public RepuestoResponse updateRepuesto(@PathVariable UUID id,@Valid @RequestBody RepuestoRequest r){return api.updateRepuesto(id,r);}
   @DeleteMapping("/repuestos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void repuestoDelete(@PathVariable UUID id){api.deleteRepuesto(id);}
   @PatchMapping("/repuestos/{id}/estado") public RepuestoResponse repuestoState(@PathVariable UUID id,@Valid @RequestBody StateRequest r){return api.repuestoEstado(id,r);}
-  @PatchMapping("/repuestos/{id}/pago") public RepuestoResponse repuestoPago(@PathVariable UUID id,@Valid @RequestBody PagoRequest r){return api.repuestoPago(id,r);}
+  @GetMapping("/repuestos/{id}/pagos") public List<PagoResponse> repuestoPagos(@PathVariable UUID id){return api.repuestoPagos(id);}
+  @PostMapping("/repuestos/{id}/pagos") @ResponseStatus(HttpStatus.CREATED) public PagoResponse repuestoPago(@PathVariable UUID id,@Valid @RequestBody PagoRegistroRequest r){return api.registrarRepuestoPago(id,r);}
+  @PostMapping("/repuestos/{id}/pagos/{pagoId}/anular") public PagoResponse anularRepuestoPago(@PathVariable UUID id,@PathVariable UUID pagoId){return api.anularRepuestoPago(id,pagoId);}
   @PatchMapping("/repuestos/{id}/items/{itemId}/estado") public RepuestoResponse repuestoItemState(@PathVariable UUID id,@PathVariable UUID itemId,@Valid @RequestBody StateRequest r){return api.repuestoItemEstado(id,itemId,r);}
   @PutMapping("/repuestos/{id}/items/{itemId}") public RepuestoResponse updateRepuestoItem(@PathVariable UUID id,@PathVariable UUID itemId,@Valid @RequestBody RepuestoItemRequest r){return api.updateRepuestoItem(id,itemId,r);}
   @DeleteMapping("/repuestos/{id}/items/{itemId}") @ResponseStatus(HttpStatus.NO_CONTENT) public void repuestoItemDelete(@PathVariable UUID id,@PathVariable UUID itemId){api.deleteRepuestoItem(id,itemId);}

@@ -27,11 +27,12 @@ public final class ApiDtos {
   public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo, UUID id) {
     public FichaTrabajoRequest(String descripcion, BigDecimal precioUnitario, BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) { this(descripcion, precioUnitario, descuento, estadoTrabajo, observacionTrabajo, null); }
   }
-  public record FichaTrabajoResponse(UUID id, String descripcion, BigDecimal precioUnitario, BigDecimal descuento, BigDecimal subtotal, String estadoTrabajo, String observacionTrabajo, Instant completadoAt, UUID completadoPor, boolean pagado) {}
+  public record FichaTrabajoResponse(UUID id, String descripcion, BigDecimal precioUnitario, BigDecimal descuento, BigDecimal subtotal, String estadoTrabajo, String observacionTrabajo, Instant completadoAt, UUID completadoPor) {}
   public record FichaRequest(@NotNull UUID clienteId, @NotNull UUID motoId, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, @PositiveOrZero Integer kilometrajeIngreso, LocalDate vencimiento, String observaciones, @NotNull @DecimalMin("0.00") BigDecimal descuentoGlobal, boolean iva, @Valid List<FichaTrabajoRequest> trabajos) {}
-  public record FichaResponse(UUID id, String numero, UUID clienteId, UUID motoId, String cliente, String moto, String patente, LocalDate vencimiento, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, LocalDate fechaEntregaReal, Integer kilometrajeIngreso, String observaciones, BigDecimal descuentoGlobal, boolean iva, String estado, String estadoPago, BigDecimal total, Instant creadoEn, List<FichaTrabajoResponse> trabajos, List<PhotoResponse> fotos) {}
+  public record FichaResponse(UUID id, String numero, UUID clienteId, UUID motoId, String cliente, String moto, String patente, LocalDate vencimiento, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, LocalDate fechaEntregaReal, Integer kilometrajeIngreso, String observaciones, BigDecimal descuentoGlobal, boolean iva, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, Instant creadoEn, List<FichaTrabajoResponse> trabajos, List<PhotoResponse> fotos) {}
   public record StateRequest(@NotBlank String estado) {}
-  public record PagoRequest(@NotBlank String estadoPago, List<UUID> itemIds) {}
+  public record PagoRegistroRequest(@NotNull @DecimalMin(value="0.01") @Digits(integer=12,fraction=2) BigDecimal monto, LocalDate fecha, String medioPago) {}
+  public record PagoResponse(UUID id, BigDecimal monto, LocalDate fecha, String medioPago, boolean anulado, Instant anuladoAt) {}
   public record PhotoRequest(@NotBlank String filename, @NotBlank String contentType, @NotBlank String base64) {}
   public record PhotoResponse(UUID id, String filename, String contentType, Instant createdAt, String url) {}
   public record OwnerRequest(@NotNull UUID clienteId, LocalDate fechaDesde, String observaciones) {}
@@ -44,9 +45,9 @@ public final class ApiDtos {
   public record RepuestoItemRequest(@NotBlank String descripcion, @NotNull RepuestoCategoria tipo, UUID fichaTrabajoId, @NotNull @Positive @DecimalMin("0.00") BigDecimal cantidad, @NotNull @DecimalMin("0.00") BigDecimal precio, String estado, String observaciones, UUID id) {
     public RepuestoItemRequest(String descripcion, RepuestoCategoria tipo, UUID fichaTrabajoId, BigDecimal cantidad, BigDecimal precio, String estado, String observaciones) { this(descripcion, tipo, fichaTrabajoId, cantidad, precio, estado, observaciones, null); }
   }
-  public record RepuestoItemResponse(UUID id, UUID fichaTrabajoId, String descripcion, RepuestoCategoria tipo, BigDecimal cantidad, BigDecimal precio, BigDecimal subtotal, String estado, String observaciones, boolean pagado) {}
+  public record RepuestoItemResponse(UUID id, UUID fichaTrabajoId, String descripcion, RepuestoCategoria tipo, BigDecimal cantidad, BigDecimal precio, BigDecimal subtotal, String estado, String observaciones) {}
   public record RepuestoRequest(@NotNull UUID motoVehiculoId, @NotNull UUID clienteId, UUID fichaId, LocalDate fecha, String proveedor, String observaciones, @NotEmpty List<@Valid RepuestoItemRequest> items) {}
-  public record RepuestoResponse(UUID id, String numero, UUID motoId, String patente, UUID clienteId, String cliente, UUID fichaId, LocalDate fecha, String estado, String estadoPago, BigDecimal total, String proveedor, String observaciones, List<RepuestoItemResponse> items, Instant creadoEn) {}
+  public record RepuestoResponse(UUID id, String numero, UUID motoId, String patente, UUID clienteId, String cliente, UUID fichaId, LocalDate fecha, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, String proveedor, String observaciones, List<RepuestoItemResponse> items, Instant creadoEn) {}
   public record ControlRequest(@NotBlank @Size(max=200) String nombre, String descripcion, Boolean obligatorio, Integer orden, Boolean activo, List<UUID> categoriaIds) {}
   public record ControlResponse(UUID id, String nombre, String descripcion, boolean obligatorio, int orden, boolean activo, List<NamedResponse> categorias, Instant createdAt, Instant updatedAt) {}
   public record RevisionControlRequest(String estado, String observacion, String correccionNecesaria) {}
