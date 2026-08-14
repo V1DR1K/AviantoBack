@@ -520,7 +520,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (target.estadoTrabajo == TrabajoState.CANCELADO || !validTrabajoTransition(target.estadoTrabajo, next)) throw new BusinessException(422, "Transición de trabajo inválida");
     target.estadoTrabajo = next;
     if (next == TrabajoState.REALIZADO) { target.completadoAt = Instant.now(); target.completadoPor = actorId(); }
-    else { target.completadoAt = null; target.completadoPor = null; target.pagado = false; }
+    else { target.completadoAt = null; target.completadoPor = null; if (next == TrabajoState.CANCELADO) target.pagado = false; }
     if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) { e.estado = FichaState.EN_PROCESO; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     audit("Fichas", "TRABAJO ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
     recalcFichaPayment(e);
@@ -528,21 +528,21 @@ PropietarioMoto o = propietarioActual(m.id);
   }
 
   private void applyFichaPayment(Ficha ficha, PagoState requested, List<UUID> selectedIds) {
-    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo == TrabajoState.REALIZADO).toList();
+    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo != TrabajoState.CANCELADO).toList();
+    if (requested != PagoState.NO_PAGADO && eligible.isEmpty()) throw new BusinessException(422, "La ficha no tiene trabajos disponibles para registrar un pago");
     if (requested == PagoState.NO_PAGADO) eligible.forEach(t -> t.pagado = false);
     else if (requested == PagoState.PAGADO) eligible.forEach(t -> t.pagado = true);
     else {
-      if (eligible.isEmpty()) throw new BusinessException(422, "La ficha no tiene trabajos realizados para registrar un pago parcial");
       Set<UUID> ids = selectedIds == null ? Set.of() : new HashSet<>(selectedIds);
       Set<UUID> eligibleIds = eligible.stream().map(t -> t.id).collect(Collectors.toSet());
-      if (ids.isEmpty() || !eligibleIds.containsAll(ids)) throw new BusinessException(422, "Seleccioná al menos un trabajo realizado válido");
+      if (ids.isEmpty() || !eligibleIds.containsAll(ids)) throw new BusinessException(422, "Seleccioná al menos un trabajo no cancelado válido");
       eligible.forEach(t -> t.pagado = ids.contains(t.id));
     }
     recalcFichaPayment(ficha);
   }
 
   private void recalcFichaPayment(Ficha ficha) {
-    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo == TrabajoState.REALIZADO).toList();
+    List<FichaTrabajo> eligible = ficha.trabajos.stream().filter(t -> t.estadoTrabajo != TrabajoState.CANCELADO).toList();
     long paid = eligible.stream().filter(t -> t.pagado).count();
     ficha.estadoPago = paid == 0 ? PagoState.NO_PAGADO : paid == eligible.size() ? PagoState.PAGADO : PagoState.PARCIAL;
   }

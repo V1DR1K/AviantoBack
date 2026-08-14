@@ -133,6 +133,53 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void fichaPaymentAcceptsPendingWorkBeforeCompletion() {
+    Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    ApiDtos.FichaResponse response = api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Pagado", null));
+
+    assertTrue(ficha.trabajos.getFirst().pagado);
+    assertEquals(PagoState.PAGADO, ficha.estadoPago);
+    assertEquals("Pagado", response.estadoPago());
+  }
+
+  @Test
+  void fichaPaymentCanBePartialBeforeEveryWorkIsCompleted() {
+    Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE, TrabajoState.REALIZADO);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    ApiDtos.FichaResponse response = api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Parcial", List.of(ficha.trabajos.getFirst().id)));
+
+    assertTrue(ficha.trabajos.getFirst().pagado);
+    assertFalse(ficha.trabajos.getLast().pagado);
+    assertEquals(PagoState.PARCIAL, ficha.estadoPago);
+    assertEquals("Parcial", response.estadoPago());
+  }
+
+  @Test
+  void advancePaymentSurvivesReturningWorkToPending() {
+    Ficha ficha = fichaConTrabajos(TrabajoState.REALIZADO);
+    ficha.estado = FichaState.EN_PROCESO;
+    ficha.motovehiculo.estadoOperativo = MotoState.EN_PROCESO;
+    ficha.trabajos.getFirst().pagado = true;
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.trabajoState(ficha.id, ficha.trabajos.getFirst().id, new ApiDtos.StateRequest("Pendiente"));
+
+    assertTrue(ficha.trabajos.getFirst().pagado);
+    assertEquals(PagoState.PAGADO, ficha.estadoPago);
+  }
+
+  @Test
+  void fichaPaymentRejectsACompletedPaymentWhenEveryWorkIsCancelled() {
+    Ficha ficha = fichaConTrabajos(TrabajoState.CANCELADO);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    assertThrows(BusinessException.class, () -> api.fichaPago(ficha.id, new ApiDtos.PagoRequest("Pagado", null)));
+  }
+
+  @Test
   void lastActiveAdminCannotBeDeleted() {
     AppUser admin = new AppUser(); admin.rol = Role.ADMINISTRACION; admin.activo = true;
     when(db.get(AppUser.class, admin.id)).thenReturn(admin);
@@ -351,6 +398,14 @@ class OperationalIntegrityTest {
 
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {
     return new ApiDtos.FichaRequest(clienteId, motoId, null, null, null, null, null, BigDecimal.ZERO, false, List.of());
+  }
+  private static Ficha fichaConTrabajos(TrabajoState... estados) {
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.cliente = cliente(UUID.randomUUID()); ficha.motovehiculo = moto(UUID.randomUUID()); ficha.descuentoGlobal = BigDecimal.ZERO;
+    for (int index = 0; index < estados.length; index++) {
+      FichaTrabajo trabajo = new FichaTrabajo(); trabajo.id = UUID.randomUUID(); trabajo.ficha = ficha; trabajo.descripcion = "Trabajo " + index; trabajo.estadoTrabajo = estados[index];
+      ficha.trabajos.add(trabajo);
+    }
+    return ficha;
   }
   private static Cliente cliente(UUID id) { Cliente c = new Cliente(); c.id = id; c.nombre = "Cliente"; return c; }
   private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; m.marca = new MarcaMoto(); m.marca.id = UUID.randomUUID(); m.marca.nombre = "Honda"; return m; }
