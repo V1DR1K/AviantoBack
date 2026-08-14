@@ -8,7 +8,7 @@ fi
 
 DB_URL="${PSQL_DATABASE_URL:-${DATABASE_URL:-}}"
 DB_URL="${DB_URL#jdbc:}"
-if [[ -z "$DB_URL" ]]; then
+if [ -z "$DB_URL" ]; then
   : "${POSTGRES_DB:?PSQL_DATABASE_URL or DATABASE_URL is required}"
   DB_URL="postgresql://${POSTGRES_HOST:-localhost}:${POSTGRES_PORT:-5432}/${POSTGRES_DB}"
 fi
