@@ -402,7 +402,10 @@ PropietarioMoto o = propietarioActual(m.id);
     Ficha e = db.get(Ficha.class, id); FichaState next = FichaState.of(r.estado());
     if (next == FichaState.CANCELADA && e.estado != FichaState.TERMINADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) { assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); e.estado = next; syncMotoAfterFichaCancellation(e); }
     else if (e.estado == FichaState.PENDIENTE && next == FichaState.EN_PROCESO && !e.trabajos.isEmpty()) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
-    else if (e.estado == FichaState.EN_PROCESO && next == FichaState.REVISION && trabajosFinalizados(e)) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.REVISION; }
+    else if (e.estado == FichaState.EN_PROCESO && next == FichaState.REVISION) {
+      if (!trabajosFinalizados(e)) throw new BusinessException(422, "Completá todos los trabajos pendientes antes de enviar la ficha a revisión");
+      e.estado = next; e.motovehiculo.estadoOperativo = MotoState.REVISION;
+    }
     else if (e.estado == FichaState.REVISION && next == FichaState.EN_PROCESO) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     else if (e.estado == FichaState.EN_PROCESO && next == FichaState.PENDIENTE) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; }
     else throw new BusinessException(422, "Transición de ficha inválida");

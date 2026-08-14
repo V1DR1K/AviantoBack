@@ -56,16 +56,17 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void deliveringAFinishedFichaReleasesTheMotorcycle() {
+  void deliveringAnUnpaidFinishedFichaReleasesTheMotorcycle() {
     UUID motoId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId); moto.estadoOperativo = MotoState.TERMINADA;
     Cliente c = cliente(UUID.randomUUID());
-    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.TERMINADA;
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.TERMINADA; ficha.estadoPago = PagoState.NO_PAGADO; ficha.total = BigDecimal.valueOf(100);
     when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
     api.entregarFicha(ficha.id);
 
     assertEquals(FichaState.ENTREGADA, ficha.estado);
+    assertEquals(PagoState.NO_PAGADO, ficha.estadoPago);
     assertFalse(moto.ingresada);
     assertEquals(MotoState.ENTREGADA, moto.estadoOperativo);
   }
@@ -127,7 +128,9 @@ class OperationalIntegrityTest {
     FichaTrabajo trabajo = new FichaTrabajo(); trabajo.id = UUID.randomUUID(); trabajo.ficha = ficha; trabajo.descripcion = "Frenos"; ficha.trabajos.add(trabajo);
     when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
 
-    assertThrows(BusinessException.class, () -> api.fichaState(ficha.id, new ApiDtos.StateRequest("En revisión")));
+    BusinessException error = assertThrows(BusinessException.class, () -> api.fichaState(ficha.id, new ApiDtos.StateRequest("En revisión")));
+    assertEquals(422, error.status);
+    assertEquals("Completá todos los trabajos pendientes antes de enviar la ficha a revisión", error.getMessage());
     assertEquals(FichaState.EN_PROCESO, ficha.estado);
     assertEquals(MotoState.EN_PROCESO, moto.estadoOperativo);
   }
