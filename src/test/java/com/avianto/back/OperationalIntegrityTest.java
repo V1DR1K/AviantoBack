@@ -103,6 +103,36 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void completingTheLastWorkKeepsTheFichaInProcessUntilReviewIsSent() {
+    Motovehiculo moto = moto(UUID.randomUUID()); moto.estadoOperativo = MotoState.EN_PROCESO;
+    Cliente cliente = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = cliente; ficha.estado = FichaState.EN_PROCESO;
+    FichaTrabajo trabajo = new FichaTrabajo(); trabajo.id = UUID.randomUUID(); trabajo.ficha = ficha; trabajo.descripcion = "Cambio de aceite"; ficha.trabajos.add(trabajo);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.trabajoState(ficha.id, trabajo.id, new ApiDtos.StateRequest("Realizado"));
+
+    assertEquals(FichaState.EN_PROCESO, ficha.estado);
+    assertEquals(MotoState.EN_PROCESO, moto.estadoOperativo);
+    api.fichaState(ficha.id, new ApiDtos.StateRequest("En revisión"));
+    assertEquals(FichaState.REVISION, ficha.estado);
+    assertEquals(MotoState.REVISION, moto.estadoOperativo);
+  }
+
+  @Test
+  void reviewCannotStartUntilEveryWorkIsFinalized() {
+    Motovehiculo moto = moto(UUID.randomUUID()); moto.estadoOperativo = MotoState.EN_PROCESO;
+    Cliente cliente = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = cliente; ficha.estado = FichaState.EN_PROCESO;
+    FichaTrabajo trabajo = new FichaTrabajo(); trabajo.id = UUID.randomUUID(); trabajo.ficha = ficha; trabajo.descripcion = "Frenos"; ficha.trabajos.add(trabajo);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    assertThrows(BusinessException.class, () -> api.fichaState(ficha.id, new ApiDtos.StateRequest("En revisión")));
+    assertEquals(FichaState.EN_PROCESO, ficha.estado);
+    assertEquals(MotoState.EN_PROCESO, moto.estadoOperativo);
+  }
+
+  @Test
   void lastActiveAdminCannotBeDeleted() {
     AppUser admin = new AppUser(); admin.rol = Role.ADMINISTRACION; admin.activo = true;
     when(db.get(AppUser.class, admin.id)).thenReturn(admin);

@@ -523,7 +523,6 @@ PropietarioMoto o = propietarioActual(m.id);
     else { target.completadoAt = null; target.completadoPor = null; target.pagado = false; }
     if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) { e.estado = FichaState.EN_PROCESO; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     audit("Fichas", "TRABAJO ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
-    if ((next == TrabajoState.REALIZADO || next == TrabajoState.CANCELADO) && e.estado == FichaState.EN_PROCESO && trabajosFinalizados(e)) { e.estado = FichaState.REVISION; e.motovehiculo.estadoOperativo = MotoState.REVISION; }
     recalcFichaPayment(e);
     return ficha(e);
   }
