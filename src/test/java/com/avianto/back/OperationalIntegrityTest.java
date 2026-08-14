@@ -206,6 +206,23 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void cancellingARepuestoItemRecalculatesThePedidoTotal() {
+    Motovehiculo moto = moto(UUID.randomUUID());
+    Cliente cliente = cliente(UUID.randomUUID());
+    RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.motovehiculo = moto; pedido.cliente = cliente; pedido.total = BigDecimal.valueOf(150);
+    RepuestoPedidoItem retained = new RepuestoPedidoItem(); retained.id = UUID.randomUUID(); retained.pedido = pedido; retained.descripcion = "Aceite"; retained.tipo = RepuestoCategoria.REPUESTO; retained.subtotal = BigDecimal.valueOf(100); retained.estado = RepuestoItemState.PEDIDO;
+    RepuestoPedidoItem cancelled = new RepuestoPedidoItem(); cancelled.id = UUID.randomUUID(); cancelled.pedido = pedido; cancelled.descripcion = "Filtro"; cancelled.tipo = RepuestoCategoria.REPUESTO; cancelled.subtotal = BigDecimal.valueOf(50); cancelled.estado = RepuestoItemState.PEDIDO;
+    pedido.items.add(retained); pedido.items.add(cancelled);
+    when(db.get(RepuestoPedido.class, pedido.id)).thenReturn(pedido);
+
+    ApiDtos.RepuestoResponse response = api.repuestoItemEstado(pedido.id, cancelled.id, new ApiDtos.StateRequest("Cancelado"));
+
+    assertEquals(RepuestoItemState.CANCELADO, cancelled.estado);
+    assertEquals(new BigDecimal("100.00"), pedido.total);
+    assertEquals(new BigDecimal("100.00"), response.total());
+  }
+
+  @Test
   void fichaPdfIncludesTheLinkedRepuestoSummary() throws Exception {
     UUID fichaId = UUID.randomUUID();
     Motovehiculo moto = moto(UUID.randomUUID()); moto.patente = "AA123AA"; moto.modelo = "Wave";

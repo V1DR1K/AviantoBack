@@ -687,6 +687,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (next == RepuestoItemState.CANCELADO) target.pagado = false;
     audit("REPUESTOS", "ITEM ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
     if (next == RepuestoItemState.ENTREGADO && e.estado == RepuestoPedidoState.EN_CURSO && e.items.stream().allMatch(x -> x.estado == RepuestoItemState.ENTREGADO || x.estado == RepuestoItemState.CANCELADO)) e.estado = RepuestoPedidoState.COMPLETADO;
+    recalcRepuesto(e);
     recalcRepuestoPayment(e);
     return repuesto(e);
   }
