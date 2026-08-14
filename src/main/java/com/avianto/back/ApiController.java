@@ -44,9 +44,21 @@ public class ApiController {
   @GetMapping("/motovehiculos/{id}") public MotorcycleResponse moto(@PathVariable UUID id){return api.moto(id);}
   @PutMapping("/motovehiculos/{id}") public MotorcycleResponse moto(@PathVariable UUID id,@Valid @RequestBody MotorcycleRequest r){return api.updateMotorcycle(id,r);}
   @DeleteMapping("/motovehiculos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void motoDelete(@PathVariable UUID id){api.deleteMotorcycle(id);}
-  @PostMapping("/motovehiculos/{id}/ingreso") public MotorcycleResponse motoIngreso(@PathVariable UUID id,@Valid @RequestBody IntakeRequest r){return api.ingresarMoto(id,r);}
+  @PostMapping("/motovehiculos/{id}/ingreso") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION') or #r.seccion == 'TALLER' or #r.seccion == 'Taller'") public MotorcycleResponse motoIngreso(@PathVariable UUID id,@Valid @RequestBody IntakeRequest r){return api.ingresarMoto(id,r);}
   @PostMapping("/motovehiculos/{id}/venta/completar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public MotorcycleResponse completarVenta(@PathVariable UUID id){return api.completarVenta(id);}
   @PatchMapping("/motovehiculos/{id}/config-service") public MotorcycleResponse motoConfig(@PathVariable UUID id,@Valid @RequestBody MotoConfigServiceRequest r){return api.updateMotoConfig(id,r);}
+
+  // ---------- Ventas ----------
+  @GetMapping("/ventas") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public PageResponse<VentaFichaResponse> ventasFicha(@RequestParam(required=false)String q,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="createdAt")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.ventaFichas(q,motoId,estado,page,size,sortBy,direction);}
+  @GetMapping("/ventas/{id}") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaFicha(@PathVariable UUID id){return api.ventaFicha(id);}
+  @GetMapping("/motovehiculos/{id}/venta") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaFichaPorMoto(@PathVariable UUID id){return api.ventaFichaPorMoto(id);}
+  @PatchMapping("/ventas/{id}/items/{itemId}") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaItem(@PathVariable UUID id,@PathVariable UUID itemId,@Valid @RequestBody VentaChecklistItemRequest r){return api.updateVentaChecklistItem(id,itemId,r);}
+  @PutMapping("/ventas/{id}/comprador") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaComprador(@PathVariable UUID id,@Valid @RequestBody VentaCompradorRequest r){return api.updateVentaComprador(id,r);}
+   @PostMapping("/ventas/{id}/transferencia") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaTransferencia(@PathVariable UUID id){return api.iniciarTransferenciaVenta(id);}
+   @PostMapping("/ventas/{id}/transferencia/cancelar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaCancelarTransferencia(@PathVariable UUID id){return api.cancelarTransferenciaVenta(id);}
+   @PutMapping("/ventas/{id}/transferencia/cita") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaCita(@PathVariable UUID id,@Valid @RequestBody VentaCitaRequest r){return api.programarCitaVenta(id,r);}
+  @PostMapping("/ventas/{id}/transferencia/asistencia") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaAsistencia(@PathVariable UUID id){return api.registrarAsistenciaVenta(id);}
+  @PostMapping("/ventas/{id}/completar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaCompletar(@PathVariable UUID id){return api.completarFichaVenta(id);}
 
   // ---------- Perfiles (una vista integral por moto) ----------
   @GetMapping("/perfiles") public PageResponse<ProfileResponse> profiles(@RequestParam(required=false)String q,@RequestParam(required=false)String dominio,@RequestParam(required=false)String moto,@RequestParam(required=false)String cliente,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction){return api.profiles(q,dominio,moto,cliente,estado,page,size,sortBy,direction);}
@@ -57,9 +69,6 @@ public class ApiController {
   @GetMapping("/motovehiculos/{id}/propietarios") public List<OwnerResponse> owners(@PathVariable UUID id){return api.owners(id);}
   @GetMapping("/motovehiculos/{id}/transferencias") public List<TransferResponse> transfersForMotorcycle(@PathVariable UUID id){return api.transfersForMotorcycle(id);}
   @GetMapping("/transferencias") public PageResponse<TransferResponse> transfers(@RequestParam(required=false)String q,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="fechaTransferencia")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.transfers(q,fechaDesde,fechaHasta,page,size,sortBy,direction);}
-  @PostMapping("/transferencias") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public TransferResponse createTransfer(@Valid @RequestBody TransferRequest r){return api.createTransfer(r);}
-  @PutMapping("/transferencias/{id}") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public TransferResponse updateTransfer(@PathVariable UUID id,@Valid @RequestBody TransferUpdateRequest r){return api.updateTransfer(id,r);}
-  @DeleteMapping("/transferencias/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public void transferDelete(@PathVariable UUID id){api.deleteTransfer(id);}
 
   // ---------- Service ----------
   @GetMapping("/motovehiculos/{id}/services") public List<ServiceResponse> services(@PathVariable UUID id){return api.services(id);}
@@ -128,6 +137,11 @@ public class ApiController {
   @PostMapping("/configuracion/controles") @ResponseStatus(HttpStatus.CREATED) public ControlResponse control(@Valid @RequestBody ControlRequest r){return api.createControl(r);}
   @PutMapping("/configuracion/controles/{id}") public ControlResponse control(@PathVariable UUID id,@Valid @RequestBody ControlRequest r){return api.updateControl(id,r);}
   @DeleteMapping("/configuracion/controles/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) public void controlDelete(@PathVariable UUID id){api.deleteControl(id);}
+
+  @GetMapping("/configuracion/ventas/checklist") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public List<VentaChecklistPlantillaResponse> ventaChecklist(@RequestParam(defaultValue="false")boolean includeDeleted){return api.ventaChecklistPlantillas(includeDeleted);}
+  @PostMapping("/configuracion/ventas/checklist") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaChecklistPlantillaResponse ventaChecklist(@Valid @RequestBody VentaChecklistPlantillaRequest r){return api.createVentaChecklistPlantilla(r);}
+  @PutMapping("/configuracion/ventas/checklist/{id}") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaChecklistPlantillaResponse ventaChecklist(@PathVariable UUID id,@Valid @RequestBody VentaChecklistPlantillaRequest r){return api.updateVentaChecklistPlantilla(id,r);}
+  @DeleteMapping("/configuracion/ventas/checklist/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public void ventaChecklistDelete(@PathVariable UUID id){api.deleteVentaChecklistPlantilla(id);}
 
   @GetMapping("/configuracion/marcas-moto") public List<NamedResponse> brands(@RequestParam(defaultValue="false")boolean includeDeleted){return api.brands(includeDeleted);}
   @PostMapping("/configuracion/marcas-moto") @ResponseStatus(HttpStatus.CREATED) public NamedResponse createBrand(@Valid @RequestBody NameRequest r){return api.createBrand(r);}

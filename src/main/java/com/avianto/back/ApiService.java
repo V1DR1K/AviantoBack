@@ -23,7 +23,7 @@ public class ApiService {
   private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch(Exception e) { return null; } }
   AppUser actor() { UUID id = actorId(); return id == null ? null : db.get(AppUser.class, id); }
   void audit(String module, String action, String text) { Auditoria a = new Auditoria(); a.usuario = actor(); a.modulo = module; a.accion = action; a.descripcion = text; db.persist(a); }
-  private void activoOnly(BaseEntity e) { if (e instanceof Cliente x) x.activo = false; if (e instanceof Motovehiculo x) x.activo = false; if (e instanceof ControlRevision x) x.activo = false; if (e instanceof MarcaMoto x) x.activo = false; if (e instanceof Categoria x) x.activo = false; if (e instanceof AppUser x) x.activo = false; if (e instanceof TrabajoCatalogo x) x.activo = false; }
+  private void activoOnly(BaseEntity e) { if (e instanceof Cliente x) x.activo = false; if (e instanceof Motovehiculo x) x.activo = false; if (e instanceof ControlRevision x) x.activo = false; if (e instanceof MarcaMoto x) x.activo = false; if (e instanceof Categoria x) x.activo = false; if (e instanceof AppUser x) x.activo = false; if (e instanceof TrabajoCatalogo x) x.activo = false; if (e instanceof VentaChecklistPlantilla x) x.activo = false; }
   private void deleted(BaseEntity e) { activoOnly(e); e.deletedAt = Instant.now(); e.deletedBy = actorId(); }
   private String active(boolean includeDeleted) { return includeDeleted ? "" : " and e.deletedAt is null"; }
   private String dirOf(String dir) { return "DESC".equalsIgnoreCase(dir) ? "DESC" : "ASC"; }
@@ -31,7 +31,8 @@ public class ApiService {
   private static BigDecimal money(BigDecimal value) { return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP); }
   private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
   private static String plateKey(String value) { return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(); }
-  private static LocalDate today() { return LocalDate.now(ZoneId.of("America/Argentina/Buenos_Aires")); }
+  private static final ZoneId ARGENTINA = ZoneId.of("America/Argentina/Buenos_Aires");
+  private static LocalDate today() { return LocalDate.now(ARGENTINA); }
   private static void touch(Motovehiculo moto) { moto.updatedAt = Instant.now(); }
 
   private <T> PageResponse<T> page(String from, String where, String countFrom, Map<String,Object> ps, int pageId, int size, String sort, String dir, Function<Object,T> mapper) {
@@ -56,6 +57,7 @@ public class ApiService {
   public void deleteClient(UUID id) {
     Cliente e = db.get(Cliente.class, id);
     if (db.count("select count(p) from PropietarioMoto p where p.cliente.id=:id and p.fechaHasta is null and p.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente tiene motos activas");
+    if (db.count("select count(f) from VentaFicha f where f.comprador.id=:id and f.finalizadaAt is null and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente es comprador prospectivo de una venta activa");
     deleted(e); audit("Clientes", "ELIMINAR", e.nombre);
   }
   private void copy(ClientRequest r, Cliente e) { e.nombre = r.nombre().trim(); e.documento = blank(r.documento()); e.telefono = r.telefono().trim(); e.email = blank(r.email()); e.direccion = blank(r.direccion()); e.observaciones = blank(r.observaciones()); }
@@ -145,6 +147,7 @@ public class ApiService {
     if (e.estadoOperativo == MotoState.VENDIDA) throw new BusinessException(409, "La moto vendida es un estado terminal");
     if (e.estadoOperativo != MotoState.DISPONIBLE && e.estadoOperativo != MotoState.ENTREGADA) throw new BusinessException(409, "La moto no está disponible para ingreso");
     MotoSection section = MotoSection.of(r.seccion());
+    if (section == MotoSection.VENTA) crearFichaVenta(e);
     e.seccion = section;
     e.ingresada = true;
     e.estadoOperativo = section == MotoSection.TALLER ? MotoState.INGRESADA_TALLER : MotoState.EN_VENTA;
@@ -152,16 +155,15 @@ public class ApiService {
     return moto(e);
   }
   public MotorcycleResponse completarVenta(UUID id) {
-    Motovehiculo e = db.get(Motovehiculo.class, id);
-    if (e.seccion != MotoSection.VENTA || e.estadoOperativo != MotoState.TRANSFERENCIA_EN_PROCESO) throw new BusinessException(409, "La moto no tiene una transferencia en proceso");
-    e.ingresada = false;
-    e.estadoOperativo = MotoState.VENDIDA;
-    audit("Ventas", "VENDER", e.patente);
-    return moto(e);
+    VentaFicha venta = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null", VentaFicha.class, Map.of("moto", id));
+    if (venta == null) throw new NotFoundException("Ficha de venta inexistente");
+    completarFichaVenta(venta.id);
+    return moto(venta.motovehiculo);
   }
   public void deleteMotorcycle(UUID id) {
     Motovehiculo e = db.get(Motovehiculo.class, id);
     if (db.count("select count(f) from Ficha f where f.motovehiculo.id=:id and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "La moto tiene fichas activas");
+    if (db.count("select count(f) from VentaFicha f where f.motovehiculo.id=:id and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "La moto tiene una ficha de venta");
     deleted(e); touch(e); audit("Motovehículos", "ELIMINAR", e.patente); clearAutocomplete();
   }
   public MotorcycleResponse updateMotoConfig(UUID id, MotoConfigServiceRequest r) {
@@ -202,6 +204,18 @@ public class ApiService {
     }
   }
   private PropietarioMoto propietarioActual(UUID motoId) { return db.one("select p from PropietarioMoto p where p.motovehiculo.id=:moto and p.fechaHasta is null and p.deletedAt is null", PropietarioMoto.class, Map.of("moto", motoId)); }
+  private void crearFichaVenta(Motovehiculo moto) {
+    PropietarioMoto vendedor = propietarioActual(moto.id);
+    if (vendedor == null) throw new BusinessException(409, "La moto debe tener un propietario actual para ingresar a Ventas");
+    if (db.count("select count(f) from VentaFicha f where f.motovehiculo.id=:moto and f.deletedAt is null", Map.of("moto", moto.id)) > 0) throw new BusinessException(409, "La moto ya tiene una ficha de venta");
+    VentaFicha ficha = new VentaFicha(); ficha.numero = "V-" + db.nextVal("ficha_venta_numero_seq"); ficha.motovehiculo = moto; ficha.vendedor = vendedor.cliente;
+    db.persist(ficha);
+    for (VentaChecklistPlantilla plantilla : db.all("select e from VentaChecklistPlantilla e where e.deletedAt is null and e.activo=true order by e.orden, e.etiqueta", VentaChecklistPlantilla.class, Map.of())) {
+      VentaFichaItem item = new VentaFichaItem(); item.fichaVenta = ficha; item.etiqueta = plantilla.etiqueta; item.orden = plantilla.orden; item.obligatorio = plantilla.obligatorio;
+      ficha.items.add(item); db.persist(item);
+    }
+    audit("VENTAS", "CREAR FICHA", ficha.numero + " · " + moto.patente);
+  }
   @Cacheable(value = "autocomplete", key = "'motorcycles:' + #q") public List<AutocompleteResponse> motorcycleAutocomplete(String q) {
     return db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and (lower(e.modelo) like lower(:q) or lower(e.patente) like lower(:q)) order by e.patente", Motovehiculo.class, Map.of("q", "%" + q.toLowerCase() + "%")).stream().limit(15).map(e -> new AutocompleteResponse(e.id, e.patente, e.marca.nombre + " " + e.modelo)).toList();
   }
@@ -222,96 +236,151 @@ public class ApiService {
   public PageResponse<TransferResponse> transfers(String q, LocalDate desde, LocalDate hasta, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String where = " where e.deletedAt is null";
-    if (q != null && !q.isBlank()) { where += " and (lower(e.motovehiculo.patente) like lower(:q) or lower(e.clienteAnterior.nombre) like lower(:q) or lower(e.clienteNuevo.nombre) like lower(:q))"; ps.put("q", "%" + q.trim() + "%"); }
-    if (desde != null) { where += " and e.fechaTransferencia>=:desde"; ps.put("desde", desde); }
-    if (hasta != null) { where += " and e.fechaTransferencia<=:hasta"; ps.put("hasta", hasta); }
-    return page("from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo", where, "from TransferenciaMoto e", ps, page, size, sortable(sort, Set.of("fechaTransferencia", "createdAt"), "fechaTransferencia"), dir, x -> transfer((TransferenciaMoto) x));
+    if (q != null && !q.isBlank()) { where += " and (lower(e.motovehiculo.patente) like lower(:q) or lower(e.clienteAnterior.nombre) like lower(:q) or lower(e.clienteNuevo.nombre) like lower(:q) or lower(coalesce(f.numero,'')) like lower(:q))"; ps.put("q", "%" + q.trim() + "%"); }
+    if (desde != null) { where += " and (e.fechaTransferencia>=:desde or (e.fechaTransferencia is null and e.createdAt>=:desdeCreada))"; ps.put("desde", desde); ps.put("desdeCreada", desde.atStartOfDay(ARGENTINA).toInstant()); }
+    if (hasta != null) { where += " and (e.fechaTransferencia<=:hasta or (e.fechaTransferencia is null and e.createdAt<:hastaCreada))"; ps.put("hasta", hasta); ps.put("hastaCreada", hasta.plusDays(1).atStartOfDay(ARGENTINA).toInstant()); }
+    return page("from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo left join e.fichaVenta f", where, "from TransferenciaMoto e left join e.fichaVenta f", ps, page, size, sortable(sort, Set.of("fechaTransferencia", "createdAt"), "fechaTransferencia"), dir, x -> transfer((TransferenciaMoto) x));
   }
   public List<TransferResponse> transfersForMotorcycle(UUID motoId) {
     db.get(Motovehiculo.class, motoId);
     return db.all("select e from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaTransferencia desc, e.createdAt desc", TransferenciaMoto.class, Map.of("moto", motoId)).stream().map(this::transfer).toList();
   }
   public TransferResponse createTransfer(TransferRequest r) {
-    Motovehiculo m = db.get(Motovehiculo.class, r.motoId());
-    if (!m.activo || m.deletedAt != null) throw new BusinessException(409, "La moto está inactiva");
-    if (m.seccion != MotoSection.VENTA || !m.ingresada || m.estadoOperativo != MotoState.EN_VENTA) throw new BusinessException(409, "La moto debe estar ingresada en Ventas y marcada En venta");
-    Cliente nuevo = db.get(Cliente.class, r.clienteNuevoId());
-    if (!nuevo.activo || nuevo.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
-    PropietarioMoto actual = propietarioActual(m.id);
-    if (actual == null) throw new BusinessException(409, "La moto no tiene un propietario actual");
-    if (actual.cliente.id.equals(nuevo.id)) throw new BusinessException(409, "El cliente ya es el propietario actual");
-    LocalDate fecha = r.fechaTransferencia();
-    if (fecha.isAfter(today())) throw new BusinessException(422, "La fecha no puede ser futura");
-    if (actual.fechaDesde != null && !fecha.isAfter(actual.fechaDesde)) throw new BusinessException(422, "La fecha debe ser posterior al inicio del período actual");
-    actual.fechaHasta = fecha.minusDays(1);
-    db.flush();
-    PropietarioMoto siguiente = new PropietarioMoto(); siguiente.motovehiculo = m; siguiente.cliente = nuevo; siguiente.fechaDesde = fecha; siguiente.observaciones = blank(r.observaciones());
-    db.persist(siguiente);
-    TransferenciaMoto e = new TransferenciaMoto(); e.motovehiculo = m; e.clienteAnterior = actual.cliente; e.clienteNuevo = nuevo; e.fechaTransferencia = fecha; e.observaciones = blank(r.observaciones()); e.realizadaPor = actor();
-    db.persist(e);
-    m.estadoOperativo = MotoState.TRANSFERENCIA_EN_PROCESO;
-    audit("Transferencias", "TRANSFERIR", m.patente + " · " + actual.cliente.nombre + " -> " + nuevo.nombre);
-    clearAutocomplete();
-    return transfer(e);
+    throw new BusinessException(409, "La transferencia de venta debe iniciarse desde su ficha de venta");
   }
   public TransferResponse updateTransfer(UUID id, TransferUpdateRequest r) {
-    TransferenciaMoto e = db.get(TransferenciaMoto.class, id);
-    if (e.deletedAt != null) throw new NotFoundException("TransferenciaMoto inexistente");
-    Cliente nuevo = db.get(Cliente.class, r.clienteNuevoId());
-    if (!nuevo.activo || nuevo.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
-    if (r.fechaTransferencia().isAfter(today())) throw new BusinessException(422, "La fecha no puede ser futura");
-    e.clienteNuevo = nuevo;
-    e.fechaTransferencia = r.fechaTransferencia();
-    e.observaciones = blank(r.observaciones());
-    rebuildOwnership(e.motovehiculo.id);
-    audit("Transferencias", "EDITAR", e.motovehiculo.patente + " · " + e.clienteNuevo.nombre);
-    clearAutocomplete();
-    return transfer(e);
+    throw new BusinessException(409, "El registro de transferencias es de solo lectura; usá la ficha de venta");
   }
   public void deleteTransfer(UUID id) {
-    TransferenciaMoto e = db.get(TransferenciaMoto.class, id);
-    if (e.deletedAt != null) throw new NotFoundException("TransferenciaMoto inexistente");
-    String description = e.motovehiculo.patente + " · " + e.clienteAnterior.nombre + " -> " + e.clienteNuevo.nombre;
-    UUID motoId = e.motovehiculo.id;
-    deleted(e);
-    if (e.motovehiculo.seccion == MotoSection.VENTA && e.motovehiculo.estadoOperativo == MotoState.TRANSFERENCIA_EN_PROCESO) e.motovehiculo.estadoOperativo = MotoState.EN_VENTA;
-    rebuildOwnership(motoId);
-    audit("Transferencias", "ELIMINAR", description);
-    clearAutocomplete();
-  }
-  private void rebuildOwnership(UUID motoId) {
-    List<PropietarioMoto> owners = db.all("select e from PropietarioMoto e join e.cliente where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaDesde asc, e.createdAt asc", PropietarioMoto.class, Map.of("moto", motoId));
-    if (owners.isEmpty()) throw new BusinessException(409, "La moto no tiene historial de propietarios");
-    PropietarioMoto initial = owners.get(0);
-    if (initial.fechaDesde == null) throw new BusinessException(409, "El historial de propietarios no tiene fecha de inicio");
-    List<TransferenciaMoto> transfers = db.all("select e from TransferenciaMoto e join e.clienteAnterior join e.clienteNuevo where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaTransferencia asc, e.createdAt asc", TransferenciaMoto.class, Map.of("moto", motoId));
-    Cliente previous = initial.cliente;
-    LocalDate previousDate = initial.fechaDesde;
-    for (TransferenciaMoto event : transfers) {
-      if (!event.fechaTransferencia.isAfter(previousDate)) throw new BusinessException(422, "Las fechas de transferencia deben ser posteriores y únicas");
-      if (event.clienteNuevo.id.equals(previous.id)) throw new BusinessException(409, "El cliente ya es el propietario anterior");
-      previous = event.clienteNuevo;
-      previousDate = event.fechaTransferencia;
-    }
-    for (PropietarioMoto owner : owners.subList(1, owners.size())) deleted(owner);
-    initial.fechaHasta = transfers.isEmpty() ? null : transfers.get(0).fechaTransferencia.minusDays(1);
-    db.flush();
-    previous = initial.cliente;
-    for (int i = 0; i < transfers.size(); i++) {
-      TransferenciaMoto event = transfers.get(i);
-      event.clienteAnterior = previous;
-      PropietarioMoto owner = new PropietarioMoto();
-      owner.motovehiculo = event.motovehiculo;
-      owner.cliente = event.clienteNuevo;
-      owner.fechaDesde = event.fechaTransferencia;
-      owner.fechaHasta = i + 1 < transfers.size() ? transfers.get(i + 1).fechaTransferencia.minusDays(1) : null;
-      owner.observaciones = event.observaciones;
-      db.persist(owner);
-      previous = event.clienteNuevo;
-    }
+    throw new BusinessException(409, "El registro de transferencias es de solo lectura; usá la ficha de venta");
   }
   private OwnerResponse owner(PropietarioMoto e) { return new OwnerResponse(e.id, e.cliente.id, e.cliente.nombre, e.fechaDesde, e.fechaHasta, e.fechaHasta == null, e.observaciones); }
-  private TransferResponse transfer(TransferenciaMoto e) { return new TransferResponse(e.id, e.motovehiculo.id, e.motovehiculo.patente, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.clienteAnterior.id, e.clienteAnterior.nombre, e.clienteNuevo.id, e.clienteNuevo.nombre, e.fechaTransferencia, e.observaciones, e.realizadaPor == null ? null : e.realizadaPor.nombre, e.createdAt); }
+  private TransferResponse transfer(TransferenciaMoto e) { return new TransferResponse(e.id, e.motovehiculo.id, e.motovehiculo.patente, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.clienteAnterior.id, e.clienteAnterior.nombre, e.clienteNuevo.id, e.clienteNuevo.nombre, e.fechaTransferencia, e.observaciones, e.realizadaPor == null ? null : e.realizadaPor.nombre, e.createdAt, e.fichaVenta == null ? null : e.fichaVenta.id, e.citaFecha, e.citaHora, e.citaLugar, e.asistenciaAt, e.asistenciaPor == null ? null : e.asistenciaPor.nombre, e.canceladaAt, e.canceladaPor == null ? null : e.canceladaPor.nombre, e.finalizadaAt, e.finalizadaPor == null ? null : e.finalizadaPor.nombre); }
+
+  // ---------- Fichas de venta ----------
+  public PageResponse<VentaFichaResponse> ventaFichas(String q, UUID motoId, String estado, int page, int size, String sort, String dir) {
+    Map<String,Object> ps = p();
+    String where = " where e.deletedAt is null";
+    if (q != null && !q.isBlank()) { where += " and (lower(e.numero) like :q or lower(e.motovehiculo.patente) like :q or lower(coalesce(e.comprador.nombre,'')) like :q)"; ps.put("q", "%" + q.trim().toLowerCase() + "%"); }
+    if (motoId != null) { where += " and e.motovehiculo.id=:moto"; ps.put("moto", motoId); }
+    if (estado != null && !estado.isBlank()) { where += " and e.motovehiculo.estadoOperativo=:estado"; ps.put("estado", MotoState.of(estado)); }
+    return page("from VentaFicha e join e.motovehiculo", where, "from VentaFicha e", ps, page, size, sortable(sort, Set.of("numero", "createdAt", "updatedAt"), "createdAt"), dir, x -> ventaFicha((VentaFicha) x));
+  }
+  public VentaFichaResponse ventaFicha(UUID id) { return ventaFicha(db.get(VentaFicha.class, id)); }
+  public VentaFichaResponse ventaFichaPorMoto(UUID motoId) {
+    VentaFicha ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null", VentaFicha.class, Map.of("moto", motoId));
+    if (ficha == null) throw new NotFoundException("Ficha de venta inexistente");
+    return ventaFicha(ficha);
+  }
+  public List<VentaChecklistPlantillaResponse> ventaChecklistPlantillas(boolean includeDeleted) {
+    return db.all("select e from VentaChecklistPlantilla e where 1=1" + active(includeDeleted) + " order by e.orden, e.etiqueta", VentaChecklistPlantilla.class, Map.of()).stream().map(this::ventaChecklistPlantilla).toList();
+  }
+  public VentaChecklistPlantillaResponse createVentaChecklistPlantilla(VentaChecklistPlantillaRequest r) {
+    VentaChecklistPlantilla e = new VentaChecklistPlantilla(); copyVentaChecklistPlantilla(r, e); db.persist(e); audit("VENTAS", "CREAR PLANTILLA", e.etiqueta); return ventaChecklistPlantilla(e);
+  }
+  public VentaChecklistPlantillaResponse updateVentaChecklistPlantilla(UUID id, VentaChecklistPlantillaRequest r) {
+    VentaChecklistPlantilla e = db.get(VentaChecklistPlantilla.class, id); copyVentaChecklistPlantilla(r, e); audit("VENTAS", "EDITAR PLANTILLA", e.etiqueta); return ventaChecklistPlantilla(e);
+  }
+  public void deleteVentaChecklistPlantilla(UUID id) {
+    VentaChecklistPlantilla e = db.get(VentaChecklistPlantilla.class, id); deleted(e); audit("VENTAS", "ELIMINAR PLANTILLA", e.etiqueta);
+  }
+  private void copyVentaChecklistPlantilla(VentaChecklistPlantillaRequest r, VentaChecklistPlantilla e) { e.etiqueta = r.etiqueta().trim(); e.orden = r.orden(); e.obligatorio = r.obligatorio(); if (r.activo() != null) e.activo = r.activo(); }
+  private VentaChecklistPlantillaResponse ventaChecklistPlantilla(VentaChecklistPlantilla e) { return new VentaChecklistPlantillaResponse(e.id, e.etiqueta, e.orden, e.obligatorio, e.activo, e.createdAt, e.updatedAt); }
+  public VentaFichaResponse updateVentaChecklistItem(UUID fichaId, UUID itemId, VentaChecklistItemRequest r) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    VentaFichaItem item = ficha.items.stream().filter(i -> i.id.equals(itemId)).findFirst().orElseThrow(() -> new NotFoundException("Ítem de venta inexistente"));
+    item.estado = VentaChecklistState.of(r.estado());
+    if (item.obligatorio && item.estado == VentaChecklistState.NO_APLICA) throw new BusinessException(422, "Un ítem obligatorio debe marcarse como realizado");
+    if (item.estado == VentaChecklistState.REALIZADO) { item.realizadoAt = Instant.now(); item.realizadoPor = actor(); }
+    else { item.realizadoAt = null; item.realizadoPor = null; }
+    audit("VENTAS", "CHECKLIST", ficha.numero + " · " + item.etiqueta + " -> " + item.estado.label());
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse updateVentaComprador(UUID fichaId, VentaCompradorRequest r) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    if (ficha.motovehiculo.estadoOperativo != MotoState.EN_VENTA || (ficha.transferencia != null && ficha.transferencia.canceladaAt == null)) throw new BusinessException(409, "El comprador no puede cambiarse cuando la transferencia ya fue iniciada");
+    Cliente comprador = db.get(Cliente.class, r.compradorId());
+    if (!comprador.activo || comprador.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
+    if (comprador.id.equals(ficha.vendedor.id)) throw new BusinessException(409, "El comprador no puede ser el propietario actual");
+    ficha.comprador = comprador;
+    audit("VENTAS", "COMPRADOR", ficha.numero + " · " + comprador.nombre);
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse iniciarTransferenciaVenta(UUID fichaId) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    if (ficha.motovehiculo.estadoOperativo != MotoState.EN_VENTA || !ficha.motovehiculo.ingresada) throw new BusinessException(409, "La ficha no está en venta");
+    if (ficha.comprador == null) throw new BusinessException(422, "Seleccioná un comprador antes de iniciar la transferencia");
+    if (!obligatoriosCompletos(ficha)) throw new BusinessException(422, "Completá los ítems obligatorios antes de iniciar la transferencia");
+    if (ficha.transferencia != null && ficha.transferencia.canceladaAt == null) throw new BusinessException(409, "La ficha ya tiene una transferencia en proceso");
+    PropietarioMoto actual = propietarioActual(ficha.motovehiculo.id);
+    if (actual == null || !actual.cliente.id.equals(ficha.vendedor.id)) throw new BusinessException(409, "El propietario actual no coincide con el vendedor de la ficha");
+    TransferenciaMoto transferencia = ficha.transferencia;
+    if (transferencia == null) {
+      transferencia = new TransferenciaMoto(); transferencia.motovehiculo = ficha.motovehiculo; transferencia.clienteAnterior = ficha.vendedor; transferencia.fichaVenta = ficha; ficha.transferencia = transferencia; db.persist(transferencia);
+    }
+    transferencia.clienteNuevo = ficha.comprador; transferencia.realizadaPor = actor(); transferencia.fechaTransferencia = null; transferencia.citaFecha = null; transferencia.citaHora = null; transferencia.citaLugar = null; transferencia.asistenciaAt = null; transferencia.asistenciaPor = null; transferencia.canceladaAt = null; transferencia.canceladaPor = null;
+    ficha.motovehiculo.estadoOperativo = MotoState.TRANSFERENCIA_EN_PROCESO;
+    audit("VENTAS", "INICIAR TRANSFERENCIA", ficha.numero + " · " + ficha.vendedor.nombre + " -> " + ficha.comprador.nombre);
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse cancelarTransferenciaVenta(UUID fichaId) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); TransferenciaMoto transferencia = transferenciaActiva(ficha);
+    transferencia.canceladaAt = Instant.now(); transferencia.canceladaPor = actor(); ficha.comprador = null; ficha.motovehiculo.estadoOperativo = MotoState.EN_VENTA;
+    audit("VENTAS", "CANCELAR TRANSFERENCIA", ficha.numero + " · " + transferencia.clienteAnterior.nombre + " -> " + transferencia.clienteNuevo.nombre);
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse programarCitaVenta(UUID fichaId, VentaCitaRequest r) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); TransferenciaMoto transferencia = transferenciaActiva(ficha);
+    if (transferencia.asistenciaAt != null) throw new BusinessException(409, "La asistencia ya fue registrada");
+    transferencia.citaFecha = r.fecha(); transferencia.citaHora = r.hora(); transferencia.citaLugar = r.lugar().trim();
+    audit("VENTAS", "CITA", ficha.numero + " · " + transferencia.citaFecha + " " + transferencia.citaHora);
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse registrarAsistenciaVenta(UUID fichaId) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); TransferenciaMoto transferencia = transferenciaActiva(ficha);
+    if (!citaCompleta(transferencia)) throw new BusinessException(422, "Completá la cita antes de registrar asistencia");
+    if (LocalDateTime.of(transferencia.citaFecha, transferencia.citaHora).isAfter(LocalDateTime.now(ZoneId.of("America/Argentina/Buenos_Aires")))) throw new BusinessException(422, "No puede registrarse asistencia a una cita futura");
+    if (transferencia.asistenciaAt != null) throw new BusinessException(409, "La asistencia ya fue registrada");
+    transferencia.asistenciaAt = Instant.now(); transferencia.asistenciaPor = actor();
+    audit("VENTAS", "ASISTENCIA", ficha.numero + " · " + transferencia.citaFecha + " " + transferencia.citaHora);
+    return ventaFicha(ficha);
+  }
+  public VentaFichaResponse completarFichaVenta(UUID fichaId) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    TransferenciaMoto transferencia = transferenciaActiva(ficha);
+    if (ficha.comprador == null || !obligatoriosCompletos(ficha)) throw new BusinessException(422, "La venta requiere comprador y checklist obligatorio completo");
+    if (!ficha.comprador.activo || ficha.comprador.deletedAt != null) throw new BusinessException(409, "El comprador está inactivo");
+    if (!citaCompleta(transferencia) || transferencia.asistenciaAt == null) throw new BusinessException(422, "La venta requiere cita completa y asistencia registrada");
+    PropietarioMoto actual = propietarioActual(ficha.motovehiculo.id);
+    if (actual == null || !actual.cliente.id.equals(ficha.vendedor.id)) throw new BusinessException(409, "El propietario actual no coincide con el vendedor de la ficha");
+    LocalDate fecha = today();
+    actual.fechaHasta = fecha;
+    db.flush();
+    PropietarioMoto nuevo = new PropietarioMoto(); nuevo.motovehiculo = ficha.motovehiculo; nuevo.cliente = ficha.comprador; nuevo.fechaDesde = fecha; nuevo.observaciones = "Venta " + ficha.numero;
+    db.persist(nuevo);
+    AppUser actor = actor();
+    transferencia.fechaTransferencia = fecha; transferencia.finalizadaAt = Instant.now(); transferencia.finalizadaPor = actor;
+    ficha.finalizadaAt = transferencia.finalizadaAt; ficha.finalizadaPor = actor;
+    ficha.motovehiculo.estadoOperativo = MotoState.VENDIDA; ficha.motovehiculo.ingresada = false;
+    audit("VENTAS", "COMPLETAR", ficha.numero + " · " + ficha.vendedor.nombre + " -> " + ficha.comprador.nombre);
+    clearAutocomplete();
+    return ventaFicha(ficha);
+  }
+  private VentaFicha ventaFichaForUpdate(UUID id) { return db.getForUpdate(VentaFicha.class, id); }
+  private void assertVentaMutable(VentaFicha ficha) { if (ficha.finalizadaAt != null || ficha.motovehiculo.estadoOperativo == MotoState.VENDIDA || (ficha.transferencia != null && ficha.transferencia.finalizadaAt != null)) throw new BusinessException(409, "La venta ya fue finalizada"); }
+  private TransferenciaMoto transferenciaActiva(VentaFicha ficha) {
+    assertVentaMutable(ficha);
+    if (ficha.motovehiculo.estadoOperativo != MotoState.TRANSFERENCIA_EN_PROCESO || ficha.transferencia == null || ficha.transferencia.canceladaAt != null) throw new BusinessException(409, "La ficha no tiene una transferencia en proceso");
+    return ficha.transferencia;
+  }
+  private boolean obligatoriosCompletos(VentaFicha ficha) { return ficha.items.stream().filter(i -> i.obligatorio).allMatch(i -> i.estado == VentaChecklistState.REALIZADO); }
+  private boolean citaCompleta(TransferenciaMoto transferencia) { return transferencia.citaFecha != null && transferencia.citaHora != null && transferencia.citaLugar != null && !transferencia.citaLugar.isBlank(); }
+  private VentaFichaResponse ventaFicha(VentaFicha ficha) {
+    List<VentaFichaItemResponse> items = ficha.items.stream().sorted(Comparator.comparingInt(i -> i.orden)).map(i -> new VentaFichaItemResponse(i.id, i.etiqueta, i.orden, i.obligatorio, i.estado.label(), i.realizadoAt, i.realizadoPor == null ? null : i.realizadoPor.nombre)).toList();
+    TransferenciaMoto transferencia = ficha.transferencia;
+    VentaTransferenciaResponse transferenciaDto = transferencia == null ? null : new VentaTransferenciaResponse(transferencia.id, transferencia.fechaTransferencia, transferencia.citaFecha, transferencia.citaHora, transferencia.citaLugar, transferencia.asistenciaAt, transferencia.asistenciaPor == null ? null : transferencia.asistenciaPor.nombre, transferencia.canceladaAt, transferencia.canceladaPor == null ? null : transferencia.canceladaPor.nombre, transferencia.finalizadaAt, transferencia.finalizadaPor == null ? null : transferencia.finalizadaPor.nombre, transferencia.createdAt);
+    return new VentaFichaResponse(ficha.id, ficha.numero, ficha.motovehiculo.id, ficha.motovehiculo.patente, ficha.motovehiculo.marca.nombre + " " + ficha.motovehiculo.modelo, ficha.vendedor.id, ficha.vendedor.nombre, ficha.comprador == null ? null : ficha.comprador.id, ficha.comprador == null ? null : ficha.comprador.nombre, estadoMoto(ficha.motovehiculo), obligatoriosCompletos(ficha), ficha.finalizadaAt, ficha.finalizadaPor == null ? null : ficha.finalizadaPor.nombre, items, transferenciaDto, ficha.createdAt, ficha.updatedAt);
+  }
 
   // ---------- Service ----------
   public List<ServiceResponse> services(UUID motoId) {

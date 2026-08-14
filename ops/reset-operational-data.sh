@@ -28,7 +28,9 @@ DELETE FROM auditoria;
 DELETE FROM refresh_token;
 DELETE FROM revision;
 DELETE FROM repuesto_pedido;
+DELETE FROM ficha_venta_item;
 DELETE FROM transferencia_moto;
+DELETE FROM ficha_venta;
 DELETE FROM propietario_moto;
 DELETE FROM ficha_trabajo;
 DELETE FROM ficha;
@@ -37,6 +39,7 @@ DELETE FROM cliente;
 
 SELECT setval('ficha_numero_seq', 1, false);
 SELECT setval('repuesto_pedido_numero_seq', 1, false);
+SELECT setval('ficha_venta_numero_seq', 1, false);
 
 COMMIT;
 SQL

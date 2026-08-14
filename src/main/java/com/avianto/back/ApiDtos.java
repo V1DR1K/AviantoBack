@@ -38,7 +38,15 @@ public final class ApiDtos {
   public record OwnerRequest(@NotNull UUID clienteId, LocalDate fechaDesde, String observaciones) {}
   public record OwnerResponse(UUID id, UUID clienteId, String cliente, LocalDate fechaDesde, LocalDate fechaHasta, boolean actual, String observaciones) {}
   public record TransferRequest(@NotNull UUID motoId, @NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
-  public record TransferResponse(UUID id, UUID motoId, String patente, String moto, UUID clienteAnteriorId, String clienteAnterior, UUID clienteNuevoId, String clienteNuevo, LocalDate fechaTransferencia, String observaciones, String realizadaPor, Instant createdAt) {}
+  public record TransferResponse(UUID id, UUID motoId, String patente, String moto, UUID clienteAnteriorId, String clienteAnterior, UUID clienteNuevoId, String clienteNuevo, LocalDate fechaTransferencia, String observaciones, String realizadaPor, Instant createdAt, UUID fichaVentaId, LocalDate citaFecha, LocalTime citaHora, String citaLugar, Instant asistenciaAt, String asistenciaPor, Instant canceladaAt, String canceladaPor, Instant finalizadaAt, String finalizadaPor) {}
+  public record VentaChecklistPlantillaRequest(@NotBlank @Size(max=200) String etiqueta, @NotNull @PositiveOrZero Integer orden, @NotNull Boolean obligatorio, Boolean activo) {}
+  public record VentaChecklistPlantillaResponse(UUID id, String etiqueta, int orden, boolean obligatorio, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public record VentaChecklistItemRequest(@NotBlank String estado) {}
+  public record VentaFichaItemResponse(UUID id, String etiqueta, int orden, boolean obligatorio, String estado, Instant realizadoAt, String realizadoPor) {}
+  public record VentaCompradorRequest(@NotNull UUID compradorId) {}
+  public record VentaCitaRequest(@NotNull LocalDate fecha, @NotNull LocalTime hora, @NotBlank @Size(max=300) String lugar) {}
+  public record VentaTransferenciaResponse(UUID id, LocalDate fechaTransferencia, LocalDate citaFecha, LocalTime citaHora, String citaLugar, Instant asistenciaAt, String asistenciaPor, Instant canceladaAt, String canceladaPor, Instant finalizadaAt, String finalizadaPor, Instant creadaEn) {}
+  public record VentaFichaResponse(UUID id, String numero, UUID motoId, String patente, String moto, UUID vendedorId, String vendedor, UUID compradorId, String comprador, String estado, boolean obligatoriosCompletos, Instant finalizadaAt, String finalizadaPor, List<VentaFichaItemResponse> items, VentaTransferenciaResponse transferencia, Instant creadaEn, Instant actualizadaEn) {}
   public record ServiceRequest(UUID fichaId, @NotNull Integer kilometraje, LocalDate fecha, String observaciones) {}
   public record ServiceResponse(UUID id, UUID motoId, UUID fichaId, String fichaNumero, Integer kilometraje, LocalDate fecha, String observaciones, String realizadoPor, Instant creadoEn) {}
   public record NextServiceResponse(UUID motoId, String patente, String cliente, String moto, Integer kilometraje, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, Integer proximKm, Integer kmFaltan, LocalDate proximaFecha, Long diasFaltan, boolean atrasadoKm, boolean atrasadoFecha, boolean sinReferencia) {}

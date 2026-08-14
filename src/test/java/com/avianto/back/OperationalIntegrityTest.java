@@ -35,7 +35,9 @@ class OperationalIntegrityTest {
   void intakeAssignsTheMotorcycleToOneSection() {
     UUID motoId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.seccion = null; moto.estadoOperativo = MotoState.DISPONIBLE;
+    PropietarioMoto owner = new PropietarioMoto(); owner.motovehiculo = moto; owner.cliente = cliente(UUID.randomUUID());
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
 
     ApiDtos.MotorcycleResponse response = api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("VENTA"));
 
@@ -242,6 +244,13 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void ownershipMigrationUsesHalfOpenPeriodsForSameDaySales() throws Exception {
+    String migration = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/db/migration/V22__venta_transferencia_cancelable.sql"));
+    assertTrue(migration.contains("daterange(fecha_desde, COALESCE(fecha_hasta, 'infinity'::date), '[)')"));
+    assertTrue(migration.contains("SET fecha_hasta = fecha_hasta + 1"));
+  }
+
+  @Test
   void fichaCannotBeOpenedWhenTheMotorcycleAlreadyHasOne() {
     UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
     Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);
@@ -351,23 +360,9 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void transferClosesTheCurrentPeriodAndCreatesTheNewOwner() {
-    UUID motoId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
-    LocalDate transferDate = LocalDate.now().minusDays(1);
-    Motovehiculo moto = moto(motoId); moto.seccion = MotoSection.VENTA; moto.estadoOperativo = MotoState.EN_VENTA; moto.ingresada = true; moto.patente = "AA123AA"; moto.modelo = "FZ"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand;
-    Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId); newClient.nombre = "Nuevo cliente";
-    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = oldClient; current.fechaDesde = transferDate.minusDays(10);
-    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
-    when(db.get(Cliente.class, newId)).thenReturn(newClient);
-    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(current);
-
-    ApiDtos.TransferResponse response = api.createTransfer(new ApiDtos.TransferRequest(motoId, newId, transferDate, "Venta"));
-
-    assertEquals(newId, response.clienteNuevoId());
-    assertEquals(transferDate.minusDays(1), current.fechaHasta);
-    verify(db).flush();
-    verify(db).persist(any(PropietarioMoto.class));
-    verify(db).persist(any(TransferenciaMoto.class));
+  void directTransferCreationIsBlocked() {
+    assertThrows(BusinessException.class, () -> api.createTransfer(new ApiDtos.TransferRequest(UUID.randomUUID(), UUID.randomUUID(), LocalDate.now(), "Venta")));
+    verify(db, never()).persist(any(PropietarioMoto.class));
   }
 
   @Test
@@ -387,45 +382,15 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void editingTransferRebuildsTheOwnerPeriods() {
-    UUID motoId = UUID.randomUUID(), transferId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
-    LocalDate initialDate = LocalDate.now().minusDays(10), oldTransferDate = LocalDate.now().minusDays(2), newTransferDate = LocalDate.now().minusDays(3);
-    Motovehiculo moto = moto(motoId); moto.patente = "AA123AA"; MarcaMoto brand = new MarcaMoto(); brand.nombre = "Yamaha"; moto.marca = brand; Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId); newClient.nombre = "Nuevo cliente";
-    PropietarioMoto initial = new PropietarioMoto(); initial.motovehiculo = moto; initial.cliente = oldClient; initial.fechaDesde = initialDate; initial.fechaHasta = oldTransferDate.minusDays(1);
-    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = newClient; current.fechaDesde = oldTransferDate;
-    TransferenciaMoto transfer = new TransferenciaMoto(); transfer.id = transferId; transfer.motovehiculo = moto; transfer.clienteAnterior = oldClient; transfer.clienteNuevo = newClient; transfer.fechaTransferencia = oldTransferDate;
-    when(db.get(TransferenciaMoto.class, transferId)).thenReturn(transfer);
-    when(db.get(Cliente.class, newId)).thenReturn(newClient);
-    when(db.all(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(List.of(initial, current));
-    when(db.all(contains("from TransferenciaMoto"), eq(TransferenciaMoto.class), anyMap())).thenReturn(List.of(transfer));
-
-    api.updateTransfer(transferId, new ApiDtos.TransferUpdateRequest(newId, newTransferDate, "Fecha corregida"));
-
-    assertEquals(newTransferDate, transfer.fechaTransferencia);
-    assertEquals(newTransferDate.minusDays(1), initial.fechaHasta);
-    assertNotNull(current.deletedAt);
-    verify(db).flush();
-    verify(db).persist(any(PropietarioMoto.class));
+  void directTransferUpdatesAreBlocked() {
+    assertThrows(BusinessException.class, () -> api.updateTransfer(UUID.randomUUID(), new ApiDtos.TransferUpdateRequest(UUID.randomUUID(), LocalDate.now(), "Fecha corregida")));
+    verify(db, never()).persist(any(PropietarioMoto.class));
   }
 
   @Test
-  void deletingTransferReactivatesThePreviousOwnerPeriodWithoutPhysicalDeletion() {
-    UUID motoId = UUID.randomUUID(), transferId = UUID.randomUUID(), oldId = UUID.randomUUID(), newId = UUID.randomUUID();
-    LocalDate initialDate = LocalDate.now().minusDays(10), transferDate = LocalDate.now().minusDays(2);
-    Motovehiculo moto = moto(motoId); moto.patente = "AA123AA"; Cliente oldClient = cliente(oldId); Cliente newClient = cliente(newId);
-    PropietarioMoto initial = new PropietarioMoto(); initial.motovehiculo = moto; initial.cliente = oldClient; initial.fechaDesde = initialDate; initial.fechaHasta = transferDate.minusDays(1);
-    PropietarioMoto current = new PropietarioMoto(); current.motovehiculo = moto; current.cliente = newClient; current.fechaDesde = transferDate;
-    TransferenciaMoto transfer = new TransferenciaMoto(); transfer.id = transferId; transfer.motovehiculo = moto; transfer.clienteAnterior = oldClient; transfer.clienteNuevo = newClient; transfer.fechaTransferencia = transferDate;
-    when(db.get(TransferenciaMoto.class, transferId)).thenReturn(transfer);
-    when(db.all(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(List.of(initial, current));
-    when(db.all(contains("from TransferenciaMoto"), eq(TransferenciaMoto.class), anyMap())).thenReturn(List.of());
-
-    api.deleteTransfer(transferId);
-
-    assertNotNull(transfer.deletedAt);
-    assertNotNull(current.deletedAt);
-    assertNull(initial.fechaHasta);
-    verify(db).flush();
+  void directTransferDeletesAreBlocked() {
+    assertThrows(BusinessException.class, () -> api.deleteTransfer(UUID.randomUUID()));
+    verify(db, never()).persist(any(PropietarioMoto.class));
   }
 
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {
