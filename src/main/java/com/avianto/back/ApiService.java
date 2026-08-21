@@ -344,6 +344,7 @@ public class ApiService {
   }
   public VentaFichaResponse iniciarTransferenciaVenta(UUID fichaId) {
     VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    sincronizarChecklist(ficha);
     if (ficha.motovehiculo.estadoOperativo != MotoState.EN_VENTA || !ficha.motovehiculo.ingresada) throw new BusinessException(409, "La ficha no está en venta");
     if (ficha.comprador == null) throw new BusinessException(422, "Seleccioná un comprador antes de iniciar la transferencia");
     if (!obligatoriosCompletos(ficha)) throw new BusinessException(422, "Completá los ítems obligatorios antes de iniciar la transferencia");
@@ -383,6 +384,7 @@ public class ApiService {
   }
   public VentaFichaResponse completarFichaVenta(UUID fichaId) {
     VentaFicha ficha = ventaFichaForUpdate(fichaId); assertVentaMutable(ficha);
+    sincronizarChecklist(ficha);
     TransferenciaMoto transferencia = transferenciaActiva(ficha);
     if (ficha.comprador == null || !obligatoriosCompletos(ficha)) throw new BusinessException(422, "La venta requiere comprador y checklist obligatorio completo");
     if (!ficha.comprador.activo || ficha.comprador.deletedAt != null) throw new BusinessException(409, "El comprador está inactivo");
@@ -409,9 +411,24 @@ public class ApiService {
     if (ficha.motovehiculo.estadoOperativo != MotoState.TRANSFERENCIA_EN_PROCESO || ficha.transferencia == null || ficha.transferencia.canceladaAt != null) throw new BusinessException(409, "La ficha no tiene una transferencia en proceso");
     return ficha.transferencia;
   }
-  private boolean obligatoriosCompletos(VentaFicha ficha) { return ficha.items.stream().filter(i -> i.obligatorio).allMatch(i -> i.estado == VentaChecklistState.REALIZADO); }
+  private void sincronizarChecklist(VentaFicha ficha) {
+    if (ficha.finalizadaAt != null || ficha.canceladaAt != null || ficha.motovehiculo.estadoOperativo != MotoState.EN_VENTA) return;
+    List<VentaChecklistPlantilla> plantillas = db.all("select e from VentaChecklistPlantilla e where e.deletedAt is null and e.activo=true order by e.orden, e.etiqueta", VentaChecklistPlantilla.class, Map.of());
+    for (VentaChecklistPlantilla plantilla : plantillas) {
+      VentaFichaItem existente = ficha.items.stream().filter(item -> item.etiqueta.equals(plantilla.etiqueta)).findFirst().orElse(null);
+      if (existente != null) {
+        existente.orden = plantilla.orden;
+        existente.obligatorio = plantilla.obligatorio;
+        continue;
+      }
+      VentaFichaItem item = new VentaFichaItem(); item.fichaVenta = ficha; item.etiqueta = plantilla.etiqueta; item.orden = plantilla.orden; item.obligatorio = plantilla.obligatorio;
+      ficha.items.add(item); db.persist(item);
+    }
+  }
+  private boolean obligatoriosCompletos(VentaFicha ficha) { return !ficha.items.isEmpty() && ficha.items.stream().filter(i -> i.obligatorio).allMatch(i -> i.estado == VentaChecklistState.REALIZADO); }
   private boolean citaCompleta(TransferenciaMoto transferencia) { return transferencia.citaFecha != null && transferencia.citaHora != null && transferencia.citaLugar != null && !transferencia.citaLugar.isBlank(); }
   private VentaFichaResponse ventaFicha(VentaFicha ficha) {
+    sincronizarChecklist(ficha);
     List<VentaFichaItemResponse> items = ficha.items.stream().sorted(Comparator.comparingInt(i -> i.orden)).map(i -> new VentaFichaItemResponse(i.id, i.etiqueta, i.orden, i.obligatorio, i.estado.label(), i.realizadoAt, i.realizadoPor == null ? null : i.realizadoPor.nombre)).toList();
     TransferenciaMoto transferencia = ficha.transferencia;
     VentaTransferenciaResponse transferenciaDto = transferencia == null ? null : new VentaTransferenciaResponse(transferencia.id, transferencia.fechaTransferencia, transferencia.citaFecha, transferencia.citaHora, transferencia.citaLugar, transferencia.asistenciaAt, transferencia.asistenciaPor == null ? null : transferencia.asistenciaPor.nombre, transferencia.canceladaAt, transferencia.canceladaPor == null ? null : transferencia.canceladaPor.nombre, transferencia.finalizadaAt, transferencia.finalizadaPor == null ? null : transferencia.finalizadaPor.nombre, transferencia.createdAt);

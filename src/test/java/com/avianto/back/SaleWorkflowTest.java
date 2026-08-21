@@ -39,6 +39,51 @@ class SaleWorkflowTest {
   }
 
   @Test
+  void openingAnExistingSaleAddsMissingActiveTemplateItems() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
+    sale.items.clear();
+    VentaChecklistPlantilla template = new VentaChecklistPlantilla(); template.etiqueta = "Título"; template.orden = 2; template.obligatorio = true; template.activo = true;
+    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
+
+    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+
+    assertEquals(1, response.items().size());
+    assertEquals("Título", response.items().getFirst().etiqueta());
+    assertFalse(response.obligatoriosCompletos());
+    verify(db).persist(isA(VentaFichaItem.class));
+  }
+
+  @Test
+  void emptySaleChecklistCannotStartTransfer() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    Cliente seller = cliente("Vendedor"), buyer = cliente("Comprador");
+    VentaFicha sale = sale(moto, seller, buyer, false);
+    sale.items.clear();
+    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of());
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner(moto, seller));
+
+    assertThrows(BusinessException.class, () -> api.iniciarTransferenciaVenta(sale.id));
+    assertEquals(MotoState.EN_VENTA, moto.estadoOperativo);
+  }
+
+  @Test
+  void openingAnExistingSaleRefreshesTheRequirementFlagFromActiveTemplate() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
+    VentaChecklistPlantilla template = new VentaChecklistPlantilla(); template.etiqueta = "Formulario"; template.orden = 4; template.obligatorio = true; template.activo = true;
+    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
+
+    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+
+    assertTrue(sale.items.getFirst().obligatorio);
+    assertFalse(response.obligatoriosCompletos());
+  }
+
+  @Test
   void buyerAndChecklistAreRequiredBeforeTransferAndOwnershipStaysWithSeller() {
     Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
     Cliente seller = cliente("Vendedor"), buyer = cliente("Comprador");
