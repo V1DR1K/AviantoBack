@@ -347,16 +347,21 @@ public class ApiService {
     sincronizarChecklist(ficha);
     if (ficha.motovehiculo.estadoOperativo != MotoState.EN_VENTA || !ficha.motovehiculo.ingresada) throw new BusinessException(409, "La ficha no está en venta");
     if (ficha.comprador == null) throw new BusinessException(422, "Seleccioná un comprador antes de iniciar la transferencia");
+    if (!ficha.comprador.activo || ficha.comprador.deletedAt != null) throw new BusinessException(409, "El comprador está inactivo");
+    if (ficha.comprador.id.equals(ficha.vendedor.id)) throw new BusinessException(409, "El comprador no puede ser el propietario actual");
     if (!obligatoriosCompletos(ficha)) throw new BusinessException(422, "Completá los ítems obligatorios antes de iniciar la transferencia");
     if (ficha.transferencia != null && ficha.transferencia.canceladaAt == null) throw new BusinessException(409, "La ficha ya tiene una transferencia en proceso");
     PropietarioMoto actual = propietarioActual(ficha.motovehiculo.id);
     if (actual == null || !actual.cliente.id.equals(ficha.vendedor.id)) throw new BusinessException(409, "El propietario actual no coincide con el vendedor de la ficha");
     TransferenciaMoto transferencia = ficha.transferencia;
+    boolean nuevaTransferencia = transferencia == null;
     if (transferencia == null) {
-      transferencia = new TransferenciaMoto(); transferencia.motovehiculo = ficha.motovehiculo; transferencia.clienteAnterior = ficha.vendedor; transferencia.fichaVenta = ficha; ficha.transferencia = transferencia; db.persist(transferencia);
+      transferencia = new TransferenciaMoto(); transferencia.motovehiculo = ficha.motovehiculo; transferencia.clienteAnterior = ficha.vendedor; transferencia.fichaVenta = ficha; ficha.transferencia = transferencia;
     }
     transferencia.clienteNuevo = ficha.comprador; transferencia.realizadaPor = actor(); transferencia.fechaTransferencia = null; transferencia.citaFecha = null; transferencia.citaHora = null; transferencia.citaLugar = null; transferencia.asistenciaAt = null; transferencia.asistenciaPor = null; transferencia.canceladaAt = null; transferencia.canceladaPor = null;
+    if (nuevaTransferencia) db.persist(transferencia);
     ficha.motovehiculo.estadoOperativo = MotoState.TRANSFERENCIA_EN_PROCESO;
+    db.flush();
     audit("VENTAS", "INICIAR TRANSFERENCIA", ficha.numero + " · " + ficha.vendedor.nombre + " -> " + ficha.comprador.nombre);
     return ventaFicha(ficha);
   }

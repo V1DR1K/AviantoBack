@@ -106,7 +106,22 @@ class SaleWorkflowTest {
     assertNotNull(sale.transferencia);
     assertEquals(buyer, sale.transferencia.clienteNuevo);
     assertNull(owner.fechaHasta);
+    verify(db).flush();
     verify(db, never()).persist(isA(PropietarioMoto.class));
+  }
+
+  @Test
+  void transferRejectsAStaleBuyerThatMatchesTheSeller() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    Cliente seller = cliente("Vendedor");
+    VentaFicha sale = sale(moto, seller, seller, true);
+    sale.items.getFirst().estado = VentaChecklistState.REALIZADO;
+    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of());
+
+    assertThrows(BusinessException.class, () -> api.iniciarTransferenciaVenta(sale.id));
+    verify(db, never()).persist(isA(TransferenciaMoto.class));
+    verify(db, never()).flush();
   }
 
   @Test

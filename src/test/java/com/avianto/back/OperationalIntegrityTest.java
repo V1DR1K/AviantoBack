@@ -251,6 +251,14 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void transferIntegrityMigrationUsesCanonicalWorkflowState() throws Exception {
+    String migration = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/db/migration/V24__transferencia_integridad_canonica.sql"));
+    assertTrue(migration.contains("ALTER COLUMN fecha_transferencia DROP NOT NULL"));
+    assertTrue(migration.contains("TRANSFERENCIA_EN_PROCESO"));
+    assertFalse(migration.contains("TRANSFERENCIA_EN_CURSO"));
+  }
+
+  @Test
   void fichaCannotBeOpenedWhenTheMotorcycleAlreadyHasOne() {
     UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
     Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);

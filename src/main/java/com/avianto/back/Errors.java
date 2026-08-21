@@ -17,7 +17,7 @@ class BusinessException extends RuntimeException { final int status; BusinessExc
   private static final Logger log=LoggerFactory.getLogger(Errors.class);
   @ExceptionHandler(NotFoundException.class) ResponseEntity<?> notFound(NotFoundException e) { return error(404,e.getMessage()); }
   @ExceptionHandler(BusinessException.class) ResponseEntity<?> business(BusinessException e) { return error(e.status,e.getMessage()); }
-  @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<?> constraint(DataIntegrityViolationException e) { return error(409,"La operación viola una restricción de integridad"); }
+  @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<?> constraint(DataIntegrityViolationException e) { log.error("Violación de integridad de datos", e); return error(409,"La operación viola una restricción de integridad"); }
   @ExceptionHandler(ConstraintViolationException.class) ResponseEntity<?> constraintValidation(ConstraintViolationException e) { return error(400,"Datos inválidos"); }
   @ExceptionHandler({HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class}) ResponseEntity<?> malformedRequest(Exception e) { return error(400,"Datos inválidos"); }
   @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class) ResponseEntity<?> validation(org.springframework.web.bind.MethodArgumentNotValidException e) { return error(400,e.getBindingResult().getAllErrors().getFirst().getDefaultMessage()); }
