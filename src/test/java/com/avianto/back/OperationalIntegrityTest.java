@@ -393,6 +393,20 @@ class OperationalIntegrityTest {
     verify(db, never()).persist(any(PropietarioMoto.class));
   }
 
+  @Test
+  void clientAutocompleteSearchesPhoneAndReturnsAllMatchingClients() {
+    List<Cliente> clients = new ArrayList<>();
+    for (int index = 0; index < 16; index++) {
+      Cliente client = cliente(UUID.randomUUID()); client.nombre = "Cliente " + index; client.telefono = "341555" + index; clients.add(client);
+    }
+    when(db.all(contains("telefono"), eq(Cliente.class), anyMap())).thenReturn(clients);
+
+    List<ApiDtos.AutocompleteResponse> result = api.clientAutocomplete("341");
+
+    assertEquals(16, result.size());
+    verify(db).all(contains("lower(coalesce(e.telefono,''))"), eq(Cliente.class), anyMap());
+  }
+
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {
     return new ApiDtos.FichaRequest(clienteId, motoId, null, null, null, null, null, BigDecimal.ZERO, false, List.of());
   }

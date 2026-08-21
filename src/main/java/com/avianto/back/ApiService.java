@@ -57,7 +57,7 @@ public class ApiService {
   public void deleteClient(UUID id) {
     Cliente e = db.get(Cliente.class, id);
     if (db.count("select count(p) from PropietarioMoto p where p.cliente.id=:id and p.fechaHasta is null and p.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente tiene motos activas");
-    if (db.count("select count(f) from VentaFicha f where f.comprador.id=:id and f.finalizadaAt is null and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente es comprador prospectivo de una venta activa");
+    if (db.count("select count(f) from VentaFicha f where f.comprador.id=:id and f.finalizadaAt is null and f.canceladaAt is null and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente es comprador prospectivo de una venta activa");
     deleted(e); audit("Clientes", "ELIMINAR", e.nombre);
   }
   private void copy(ClientRequest r, Cliente e) { e.nombre = r.nombre().trim(); e.documento = blank(r.documento()); e.telefono = r.telefono().trim(); e.email = blank(r.email()); e.direccion = blank(r.direccion()); e.observaciones = blank(r.observaciones()); }
@@ -67,7 +67,8 @@ public class ApiService {
     return new ClientResponse(e.id, e.nombre, e.documento, e.telefono, e.email, e.direccion, e.observaciones, e.activo, motos, fichas, e.createdAt, e.updatedAt);
   }
   @Cacheable(value = "autocomplete", key = "'clients:' + #q") public List<AutocompleteResponse> clientAutocomplete(String q) {
-    return db.all("select e from Cliente e where e.deletedAt is null and e.activo=true and (lower(e.nombre) like :q or lower(coalesce(e.documento,'')) like :q) order by e.nombre", Cliente.class, Map.of("q", "%" + q.toLowerCase() + "%")).stream().limit(15).map(e -> new AutocompleteResponse(e.id, e.nombre, e.documento)).toList();
+    String query = q == null ? "" : q.trim().toLowerCase();
+    return db.all("select e from Cliente e where e.deletedAt is null and e.activo=true and (lower(e.nombre) like :q or lower(coalesce(e.documento,'')) like :q or lower(coalesce(e.telefono,'')) like :q) order by e.nombre", Cliente.class, Map.of("q", "%" + query + "%")).stream().map(e -> new AutocompleteResponse(e.id, e.nombre, e.documento == null ? e.telefono : e.documento)).toList();
   }
   @CacheEvict(value = "autocomplete", allEntries = true) void clearAutocomplete() {}
 
@@ -154,8 +155,43 @@ public class ApiService {
     audit("Motovehículos", "INGRESAR", e.patente + " -> " + section.label());
     return moto(e);
   }
+  public MotorcycleResponse cambiarCircuito(UUID id, CircuitChangeRequest r) {
+    if (r.motivo() == null || r.motivo().isBlank()) throw new BusinessException(400, "El motivo del cambio de circuito es obligatorio");
+    Motovehiculo moto = db.getForUpdate(Motovehiculo.class, id);
+    MotoSection destino = MotoSection.of(r.seccion());
+    MotoSection origen = moto.seccion;
+    if (origen == destino) throw new BusinessException(409, "La moto ya está en el circuito seleccionado");
+    if (moto.estadoOperativo == MotoState.VENDIDA) throw new BusinessException(409, "La moto vendida es un estado terminal");
+    if (destino == MotoSection.VENTA) {
+      if (moto.estadoOperativo != MotoState.DISPONIBLE && moto.estadoOperativo != MotoState.ENTREGADA && moto.estadoOperativo != MotoState.INGRESADA_TALLER) throw new BusinessException(409, "La moto no puede pasar a Ventas desde su estado actual");
+      assertNoOpenWorkshopRecords(moto.id);
+      crearFichaVenta(moto);
+      moto.seccion = MotoSection.VENTA;
+      moto.ingresada = true;
+      moto.estadoOperativo = MotoState.EN_VENTA;
+    } else {
+      VentaFicha venta = ventaActiva(moto.id);
+      if (venta != null) {
+        if (moto.estadoOperativo == MotoState.TRANSFERENCIA_EN_PROCESO || (venta.transferencia != null && venta.transferencia.canceladaAt == null)) throw new BusinessException(409, "Cancelá la transferencia de venta antes de devolver la moto a Taller");
+        venta.canceladaAt = Instant.now(); venta.canceladaPor = actor(); venta.canceladaMotivo = r.motivo().trim();
+        audit("VENTAS", "CANCELAR FICHA", venta.numero + " · " + venta.canceladaMotivo);
+      }
+      moto.seccion = MotoSection.TALLER;
+      moto.ingresada = true;
+      moto.estadoOperativo = MotoState.INGRESADA_TALLER;
+    }
+    touch(moto);
+    audit("Motovehículos", "CAMBIAR CIRCUITO", moto.patente + " · " + (origen == null ? "Sin circuito" : origen.label()) + " -> " + destino.label() + " · " + r.motivo().trim());
+    return moto(moto);
+  }
+  private VentaFicha ventaActiva(UUID motoId) { return db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null and e.finalizadaAt is null", VentaFicha.class, Map.of("moto", motoId)); }
+  private void assertNoOpenWorkshopRecords(UUID motoId) {
+    if (db.count("select count(f) from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null and f.estado not in (com.avianto.back.FichaState.ENTREGADA, com.avianto.back.FichaState.CANCELADA)", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene una ficha de Taller abierta");
+    if (db.count("select count(r) from RepuestoPedido r where r.motovehiculo.id=:moto and r.deletedAt is null and r.estado <> com.avianto.back.RepuestoPedidoState.CANCELADO", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene pedidos de repuestos activos");
+    if (db.count("select count(p) from Pago p where p.ficha.motovehiculo.id=:moto and p.anuladoAt is null", Map.of("moto", motoId)) > 0 || db.count("select count(p) from Pago p where p.repuestoPedido.motovehiculo.id=:moto and p.anuladoAt is null", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene pagos registrados");
+  }
   public MotorcycleResponse completarVenta(UUID id) {
-    VentaFicha venta = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null", VentaFicha.class, Map.of("moto", id));
+    VentaFicha venta = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null", VentaFicha.class, Map.of("moto", id));
     if (venta == null) throw new NotFoundException("Ficha de venta inexistente");
     completarFichaVenta(venta.id);
     return moto(venta.motovehiculo);
@@ -367,7 +403,7 @@ public class ApiService {
     return ventaFicha(ficha);
   }
   private VentaFicha ventaFichaForUpdate(UUID id) { return db.getForUpdate(VentaFicha.class, id); }
-  private void assertVentaMutable(VentaFicha ficha) { if (ficha.finalizadaAt != null || ficha.motovehiculo.estadoOperativo == MotoState.VENDIDA || (ficha.transferencia != null && ficha.transferencia.finalizadaAt != null)) throw new BusinessException(409, "La venta ya fue finalizada"); }
+  private void assertVentaMutable(VentaFicha ficha) { if (ficha.canceladaAt != null || ficha.finalizadaAt != null || ficha.motovehiculo.estadoOperativo == MotoState.VENDIDA || (ficha.transferencia != null && ficha.transferencia.finalizadaAt != null)) throw new BusinessException(409, "La venta ya fue finalizada o cancelada"); }
   private TransferenciaMoto transferenciaActiva(VentaFicha ficha) {
     assertVentaMutable(ficha);
     if (ficha.motovehiculo.estadoOperativo != MotoState.TRANSFERENCIA_EN_PROCESO || ficha.transferencia == null || ficha.transferencia.canceladaAt != null) throw new BusinessException(409, "La ficha no tiene una transferencia en proceso");
@@ -379,7 +415,7 @@ public class ApiService {
     List<VentaFichaItemResponse> items = ficha.items.stream().sorted(Comparator.comparingInt(i -> i.orden)).map(i -> new VentaFichaItemResponse(i.id, i.etiqueta, i.orden, i.obligatorio, i.estado.label(), i.realizadoAt, i.realizadoPor == null ? null : i.realizadoPor.nombre)).toList();
     TransferenciaMoto transferencia = ficha.transferencia;
     VentaTransferenciaResponse transferenciaDto = transferencia == null ? null : new VentaTransferenciaResponse(transferencia.id, transferencia.fechaTransferencia, transferencia.citaFecha, transferencia.citaHora, transferencia.citaLugar, transferencia.asistenciaAt, transferencia.asistenciaPor == null ? null : transferencia.asistenciaPor.nombre, transferencia.canceladaAt, transferencia.canceladaPor == null ? null : transferencia.canceladaPor.nombre, transferencia.finalizadaAt, transferencia.finalizadaPor == null ? null : transferencia.finalizadaPor.nombre, transferencia.createdAt);
-    return new VentaFichaResponse(ficha.id, ficha.numero, ficha.motovehiculo.id, ficha.motovehiculo.patente, ficha.motovehiculo.marca.nombre + " " + ficha.motovehiculo.modelo, ficha.vendedor.id, ficha.vendedor.nombre, ficha.comprador == null ? null : ficha.comprador.id, ficha.comprador == null ? null : ficha.comprador.nombre, estadoMoto(ficha.motovehiculo), obligatoriosCompletos(ficha), ficha.finalizadaAt, ficha.finalizadaPor == null ? null : ficha.finalizadaPor.nombre, items, transferenciaDto, ficha.createdAt, ficha.updatedAt);
+    return new VentaFichaResponse(ficha.id, ficha.numero, ficha.motovehiculo.id, ficha.motovehiculo.patente, ficha.motovehiculo.marca.nombre + " " + ficha.motovehiculo.modelo, ficha.vendedor.id, ficha.vendedor.nombre, ficha.comprador == null ? null : ficha.comprador.id, ficha.comprador == null ? null : ficha.comprador.nombre, ficha.canceladaAt != null ? "Cancelada" : estadoMoto(ficha.motovehiculo), obligatoriosCompletos(ficha), ficha.finalizadaAt, ficha.finalizadaPor == null ? null : ficha.finalizadaPor.nombre, ficha.canceladaAt, ficha.canceladaPor == null ? null : ficha.canceladaPor.nombre, ficha.canceladaMotivo, items, transferenciaDto, ficha.createdAt, ficha.updatedAt);
   }
 
   // ---------- Service ----------

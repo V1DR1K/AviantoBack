@@ -146,16 +146,55 @@ class SaleWorkflowTest {
   }
 
   @Test
+  void changingFromVentaCancelsTheSaleFichaAndReturnsTheMotorcycleToWorkshop() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    Cliente seller = cliente("Vendedor"), buyer = cliente("Comprador");
+    VentaFicha sale = sale(moto, seller, buyer, false);
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+    when(db.one(contains("from VentaFicha"), eq(VentaFicha.class), anyMap())).thenReturn(sale);
+
+    api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("TALLER", "Circuito seleccionado incorrectamente"));
+
+    assertEquals(MotoSection.TALLER, moto.seccion);
+    assertEquals(MotoState.INGRESADA_TALLER, moto.estadoOperativo);
+    assertTrue(moto.ingresada);
+    assertNotNull(sale.canceladaAt);
+    assertEquals("Circuito seleccionado incorrectamente", sale.canceladaMotivo);
+  }
+
+  @Test
+  void changingFromCancelledWorkshopFichaToVentaCreatesANewSaleFicha() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.TALLER; moto.ingresada = false; moto.estadoOperativo = MotoState.ENTREGADA;
+    Cliente seller = cliente("Vendedor");
+    PropietarioMoto owner = owner(moto, seller);
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+    when(db.nextVal("ficha_venta_numero_seq")).thenReturn(9L);
+
+    api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("VENTA", "La moto debe continuar por Ventas"));
+
+    assertEquals(MotoSection.VENTA, moto.seccion);
+    assertEquals(MotoState.EN_VENTA, moto.estadoOperativo);
+    assertTrue(moto.ingresada);
+    var ficha = org.mockito.ArgumentCaptor.forClass(VentaFicha.class);
+    verify(db).persist(ficha.capture());
+    assertEquals("V-9", ficha.getValue().numero);
+  }
+
+  @Test
   void saleEndpointsDeclareTheirRoleBoundaries() throws Exception {
     PreAuthorize checklist = ApiController.class.getDeclaredMethod("ventaItem", UUID.class, UUID.class, ApiDtos.VentaChecklistItemRequest.class).getAnnotation(PreAuthorize.class);
     PreAuthorize buyer = ApiController.class.getDeclaredMethod("ventaComprador", UUID.class, ApiDtos.VentaCompradorRequest.class).getAnnotation(PreAuthorize.class);
     PreAuthorize cancel = ApiController.class.getDeclaredMethod("ventaCancelarTransferencia", UUID.class).getAnnotation(PreAuthorize.class);
     PreAuthorize complete = ApiController.class.getDeclaredMethod("ventaCompletar", UUID.class).getAnnotation(PreAuthorize.class);
+    PreAuthorize circuit = ApiController.class.getDeclaredMethod("motoCircuito", UUID.class, ApiDtos.CircuitChangeRequest.class).getAnnotation(PreAuthorize.class);
 
     assertTrue(checklist.value().contains("ROLE_OPERARIO"));
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", buyer.value());
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", cancel.value());
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", complete.value());
+    assertTrue(circuit.value().contains("ROLE_ADMINISTRACION"));
+    assertTrue(circuit.value().contains("#r.seccion == 'TALLER'"));
   }
 
   private static VentaFicha sale(Motovehiculo moto, Cliente seller, Cliente buyer, boolean required) {
