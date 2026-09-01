@@ -242,6 +242,54 @@ class SaleWorkflowTest {
   }
 
   @Test
+  void changingCircuitIsBlockedWhenTheMotorcycleHasAnOpenWorkshopFicha() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.TALLER; moto.ingresada = true; moto.estadoOperativo = MotoState.INGRESADA_TALLER;
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+    when(db.count(contains("from Ficha"), anyMap())).thenReturn(1L);
+
+    BusinessException error = assertThrows(BusinessException.class, () -> api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("VENTA", "Ingreso equivocado")));
+
+    assertEquals("La moto tiene una ficha de Taller abierta", error.getMessage());
+    verify(db, never()).persist(isA(VentaFicha.class));
+  }
+
+  @Test
+  void changingCircuitIsBlockedWhenTheMotorcycleHasAValidPayment() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.TALLER; moto.ingresada = true; moto.estadoOperativo = MotoState.INGRESADA_TALLER;
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+    when(db.count(contains("from Pago"), anyMap())).thenReturn(1L);
+
+    BusinessException error = assertThrows(BusinessException.class, () -> api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("VENTA", "Ingreso equivocado")));
+
+    assertEquals("La moto tiene pagos registrados", error.getMessage());
+    verify(db, never()).persist(isA(VentaFicha.class));
+  }
+
+  @Test
+  void changingFromVentaIsBlockedWhenItsTransferIsActive() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.TRANSFERENCIA_EN_PROCESO;
+    VentaFicha sale = sale(moto, cliente("Vendedor"), cliente("Comprador"), false);
+    TransferenciaMoto transfer = transferencia(sale); sale.transferencia = transfer;
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+    when(db.one(contains("from VentaFicha"), eq(VentaFicha.class), anyMap())).thenReturn(sale);
+
+    BusinessException error = assertThrows(BusinessException.class, () -> api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("TALLER", "Ingreso equivocado")));
+
+    assertEquals("Cancelá la transferencia de venta antes de devolver la moto a Taller", error.getMessage());
+    assertNull(sale.canceladaAt);
+  }
+
+  @Test
+  void changingCircuitDoesNotReplaceTheInitialIntakeFlow() {
+    Motovehiculo moto = moto(); moto.seccion = null; moto.ingresada = false; moto.estadoOperativo = MotoState.DISPONIBLE;
+    when(db.getForUpdate(Motovehiculo.class, moto.id)).thenReturn(moto);
+
+    BusinessException error = assertThrows(BusinessException.class, () -> api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("VENTA", "Ingreso equivocado")));
+
+    assertEquals("La moto no tiene un circuito asignado; debe ingresarse desde el flujo de ingreso", error.getMessage());
+  }
+
+  @Test
   void saleEndpointsDeclareTheirRoleBoundaries() throws Exception {
     PreAuthorize checklist = ApiController.class.getDeclaredMethod("ventaItem", UUID.class, UUID.class, ApiDtos.VentaChecklistItemRequest.class).getAnnotation(PreAuthorize.class);
     PreAuthorize buyer = ApiController.class.getDeclaredMethod("ventaComprador", UUID.class, ApiDtos.VentaCompradorRequest.class).getAnnotation(PreAuthorize.class);
@@ -254,7 +302,7 @@ class SaleWorkflowTest {
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", cancel.value());
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", complete.value());
     assertTrue(circuit.value().contains("ROLE_ADMINISTRACION"));
-    assertTrue(circuit.value().contains("#r.seccion == 'TALLER'"));
+    assertTrue(circuit.value().contains("ROLE_OPERARIO"));
   }
 
   private static VentaFicha sale(Motovehiculo moto, Cliente seller, Cliente buyer, boolean required) {

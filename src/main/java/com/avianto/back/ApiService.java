@@ -160,11 +160,13 @@ public class ApiService {
     Motovehiculo moto = db.getForUpdate(Motovehiculo.class, id);
     MotoSection destino = MotoSection.of(r.seccion());
     MotoSection origen = moto.seccion;
+    if (origen == null) throw new BusinessException(409, "La moto no tiene un circuito asignado; debe ingresarse desde el flujo de ingreso");
     if (origen == destino) throw new BusinessException(409, "La moto ya está en el circuito seleccionado");
     if (moto.estadoOperativo == MotoState.VENDIDA) throw new BusinessException(409, "La moto vendida es un estado terminal");
+    if (db.count("select count(f) from VentaFicha f where f.motovehiculo.id=:moto and f.deletedAt is null and f.finalizadaAt is not null", Map.of("moto", id)) > 0) throw new BusinessException(409, "La moto tiene una venta finalizada");
+    assertNoOpenWorkshopRecords(moto.id);
     if (destino == MotoSection.VENTA) {
       if (moto.estadoOperativo != MotoState.DISPONIBLE && moto.estadoOperativo != MotoState.ENTREGADA && moto.estadoOperativo != MotoState.INGRESADA_TALLER) throw new BusinessException(409, "La moto no puede pasar a Ventas desde su estado actual");
-      assertNoOpenWorkshopRecords(moto.id);
       crearFichaVenta(moto);
       moto.seccion = MotoSection.VENTA;
       moto.ingresada = true;
