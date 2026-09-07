@@ -58,7 +58,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Mantener confirmaciones abiertas hasta completar la mutación.
 - [x] Corregir asociación del propietario en edición de motos.
 - [~] Cancelar respuestas viejas de listados principales y detalle de moto: perfiles, repuestos, transferencias, ventas, fichas, servicios, historial, transferencias y próxima revisión. Quedan cargas puntuales de formularios y configuración.
-- [ ] Hacer idempotente y reintentable la carga de fotos.
+- [x] Hacer idempotente y reintentable la carga de fotos.
 - [ ] Agregar protección de cambios sin guardar a edición de fichas.
 - [ ] Completar estados de carga, error, retry y empty.
 - [ ] Agregar pruebas E2E de los flujos críticos.

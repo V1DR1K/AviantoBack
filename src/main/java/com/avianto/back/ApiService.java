@@ -721,12 +721,22 @@ PropietarioMoto o = propietarioActual(m.id);
     try { data = Base64.getDecoder().decode(r.base64()); } catch (IllegalArgumentException ex) { throw new BusinessException(400, "base64 inválido"); }
     if (data.length > 5_000_000) throw new BusinessException(400, "Foto excede 5 MB");
     if (!"image/webp".equalsIgnoreCase(r.contentType()) || !webp(data)) throw new BusinessException(400, "La foto debe estar en formato WebP");
+    String key = blank(r.idempotencyKey());
+    if (key != null) {
+      FichaFoto previous = db.one("select f from FichaFoto f where f.idempotencyKey=:key", FichaFoto.class, Map.of("key", key));
+      if (previous != null) {
+        if (!previous.ficha.id.equals(id)) throw new BusinessException(409, "La clave de idempotencia ya fue utilizada en otra ficha");
+        String normalizedFilename = r.filename().replaceAll("[^a-zA-Z0-9._-]", "_").replaceFirst("(?i)\\.[^.]+$", "") + ".webp";
+        if (!Objects.equals(previous.filename, normalizedFilename) || !Arrays.equals(previous.content, data)) throw new BusinessException(409, "La clave de idempotencia ya fue utilizada con otros datos");
+        return photo(e.id, previous);
+      }
+    }
     FichaFoto f = new FichaFoto();
     f.ficha = e;
     f.filename = r.filename().replaceAll("[^a-zA-Z0-9._-]", "_").replaceFirst("(?i)\\.[^.]+$", "") + ".webp";
-    f.contentType = "image/webp"; f.content = data;
+    f.contentType = "image/webp"; f.idempotencyKey = key; f.content = data;
     db.persist(f);
-    audit("Fichas", "FOTO", e.numero);
+    audit("Fichas", "FOTO", "FichaFoto", f.id, null, f.filename, key, e.numero);
     return photo(e.id, f);
   }
   public FichaFoto photo(UUID fichaId, UUID photoId) {

@@ -148,6 +148,20 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void photoIdempotencyReturnsTheExistingPhotoWithoutPersistingADuplicate() {
+    Ficha ficha = fichaParaPago("100.00");
+    byte[] webp = new byte[]{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
+    FichaFoto existing = new FichaFoto(); existing.id = UUID.randomUUID(); existing.ficha = ficha; existing.filename = "photo.webp"; existing.contentType = "image/webp"; existing.content = webp;
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+    when(db.one(contains("idempotencyKey"), eq(FichaFoto.class), anyMap())).thenReturn(existing);
+
+    ApiDtos.PhotoResponse response = api.createPhoto(ficha.id, new ApiDtos.PhotoRequest("photo.jpg", "image/webp", Base64.getEncoder().encodeToString(webp), "photo-1"));
+
+    assertEquals(existing.id, response.id());
+    verify(db, never()).persist(isA(FichaFoto.class));
+  }
+
+  @Test
   void completingTheLastWorkKeepsTheFichaInProcessUntilReviewIsSent() {
     Motovehiculo moto = moto(UUID.randomUUID()); moto.estadoOperativo = MotoState.EN_PROCESO;
     Cliente cliente = cliente(UUID.randomUUID());

@@ -36,7 +36,9 @@ public final class ApiDtos {
     public PagoRegistroRequest(BigDecimal monto, LocalDate fecha, String medioPago) { this(monto, fecha, medioPago, null); }
   }
   public record PagoResponse(UUID id, BigDecimal monto, LocalDate fecha, String medioPago, boolean anulado, Instant anuladoAt) {}
-  public record PhotoRequest(@NotBlank String filename, @NotBlank String contentType, @NotBlank String base64) {}
+  public record PhotoRequest(@NotBlank String filename, @NotBlank String contentType, @NotBlank String base64, @Size(max=120) String idempotencyKey) {
+    public PhotoRequest(String filename, String contentType, String base64) { this(filename, contentType, base64, null); }
+  }
   public record PhotoResponse(UUID id, String filename, String contentType, Instant createdAt, String url) {}
   public record OwnerRequest(@NotNull UUID clienteId, LocalDate fechaDesde, String observaciones) {}
   public record OwnerResponse(UUID id, UUID clienteId, String cliente, LocalDate fechaDesde, LocalDate fechaHasta, boolean actual, String observaciones) {}
