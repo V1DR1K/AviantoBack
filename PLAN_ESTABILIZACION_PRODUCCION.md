@@ -69,7 +69,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Igualar filtros de pantalla y exportación.
 - [x] Implementar o eliminar el parámetro `columns`.
 - [x] Paginar auditoría y consultas grandes.
-- [ ] Registrar entidad, ID, antes/después, motivo y correlación en auditoría.
+- [~] Registrar entidad, ID, antes/después, motivo y correlación en auditoría. Ya se aplica a cambios de circuito, estados y pagos; quedan eventos legacy de ABM y comandos secundarios.
 - [ ] Alinear README, contrato API, wiki y OpenAPI con el código actual.
 
 ## Fase 5: Docker local

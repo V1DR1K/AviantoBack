@@ -12,6 +12,7 @@ import java.time.temporal.ChronoUnit;
 import java.util.*;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.slf4j.MDC;
 
 @Service
 @Transactional
@@ -22,7 +23,10 @@ public class ApiService {
   private Map<String,Object> p() { return new HashMap<>(); }
   private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch(Exception e) { return null; } }
   AppUser actor() { UUID id = actorId(); return id == null ? null : db.get(AppUser.class, id); }
-  void audit(String module, String action, String text) { Auditoria a = new Auditoria(); a.usuario = actor(); a.modulo = module; a.accion = action; a.descripcion = text; db.persist(a); }
+  void audit(String module, String action, String text) { audit(module, action, null, null, null, null, null, text); }
+  void audit(String module, String action, String entity, UUID entityId, String before, String after, String reason, String text) {
+    Auditoria a = new Auditoria(); a.usuario = actor(); a.modulo = module; a.accion = action; a.descripcion = text; a.entidad = entity; a.entidadId = entityId; a.antes = before; a.despues = after; a.motivo = reason; a.correlationId = MDC.get("correlationId"); db.persist(a);
+  }
   private void activoOnly(BaseEntity e) { if (e instanceof Cliente x) x.activo = false; if (e instanceof Motovehiculo x) x.activo = false; if (e instanceof ControlRevision x) x.activo = false; if (e instanceof MarcaMoto x) x.activo = false; if (e instanceof Categoria x) x.activo = false; if (e instanceof AppUser x) x.activo = false; if (e instanceof TrabajoCatalogo x) x.activo = false; if (e instanceof VentaChecklistPlantilla x) x.activo = false; }
   private void deleted(BaseEntity e) { activoOnly(e); e.deletedAt = Instant.now(); e.deletedBy = actorId(); }
   private String active(boolean includeDeleted) { return includeDeleted ? "" : " and e.deletedAt is null"; }
@@ -180,7 +184,7 @@ public class ApiService {
       moto.estadoOperativo = MotoState.INGRESADA_TALLER;
     }
     touch(moto);
-    audit("Motovehículos", "CAMBIAR CIRCUITO", moto.patente + " · " + (origen == null ? "Sin circuito" : origen.label()) + " -> " + destino.label() + " · " + r.motivo().trim());
+    audit("Motovehículos", "CAMBIAR CIRCUITO", "Motovehiculo", moto.id, origen == null ? null : origen.label(), destino.label(), r.motivo().trim(), moto.patente + " · " + (origen == null ? "Sin circuito" : origen.label()) + " -> " + destino.label());
     return moto(moto);
   }
   private VentaFicha ventaActiva(UUID motoId) { return db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null and e.finalizadaAt is null", VentaFicha.class, Map.of("moto", motoId)); }
@@ -529,7 +533,7 @@ PropietarioMoto o = propietarioActual(m.id);
   public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.getForUpdate(Ficha.class, id); assertEditable(e); if (!e.cliente.id.equals(r.clienteId()) || !e.motovehiculo.id.equals(r.motoId())) throw new BusinessException(409, "El cliente y la moto de una ficha existente no pueden cambiarse"); copy(r, e); requireAtLeastOneTrabajo(e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.PENDIENTE) e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
   public void deleteFicha(UUID id) { Ficha e = db.getForUpdate(Ficha.class, id); if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha finalizada"); assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); syncMotoAfterFichaCancellation(e); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
   public FichaResponse fichaState(UUID id, StateRequest r) {
-    Ficha e = db.get(Ficha.class, id); FichaState next = FichaState.of(r.estado());
+    Ficha e = db.get(Ficha.class, id); FichaState before = e.estado; FichaState next = FichaState.of(r.estado());
     if (next == FichaState.CANCELADA && e.estado != FichaState.TERMINADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) { assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); e.estado = next; syncMotoAfterFichaCancellation(e); }
     else if (e.estado == FichaState.PENDIENTE && next == FichaState.EN_PROCESO && !e.trabajos.isEmpty()) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     else if (e.estado == FichaState.EN_PROCESO && next == FichaState.REVISION) {
@@ -539,7 +543,7 @@ PropietarioMoto o = propietarioActual(m.id);
     else if (e.estado == FichaState.REVISION && next == FichaState.EN_PROCESO) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     else if (e.estado == FichaState.EN_PROCESO && next == FichaState.PENDIENTE) { e.estado = next; e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; }
     else throw new BusinessException(422, "Transición de ficha inválida");
-    audit("Fichas", "ESTADO", e.numero + " -> " + e.estado.label()); return ficha(e);
+    audit("Fichas", "ESTADO", "Ficha", e.id, before.label(), e.estado.label(), null, e.numero + " -> " + e.estado.label()); return ficha(e);
   }
   public FichaResponse entregarFicha(UUID id) {
     Ficha e = db.get(Ficha.class, id);
@@ -558,11 +562,11 @@ PropietarioMoto o = propietarioActual(m.id);
     Pago previous = idempotentPayment(r, e.id, null);
     if (previous != null) return pago(previous);
     Pago pago = nuevoPago(r, e.total, montoCobrado(e.pagos)); pago.ficha = e; e.pagos.add(pago); db.persist(pago); recalcFichaPayment(e);
-    audit("Fichas", "PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
+    audit("Fichas", "PAGO", "Pago", pago.id, null, pago.monto.toPlainString(), r.idempotencyKey(), e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
   public PagoResponse anularFichaPago(UUID id, UUID pagoId) {
     Ficha e = db.getForUpdate(Ficha.class, id); Pago pago = pagoDe(e.pagos, pagoId);
-    anularPago(pago); recalcFichaPayment(e); audit("Fichas", "ANULAR PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
+    anularPago(pago); recalcFichaPayment(e); audit("Fichas", "ANULAR PAGO", "Pago", pago.id, "activo", "anulado", null, e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
   private void assertEditable(Ficha e) { if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA || e.estado == FichaState.CANCELADA) throw new BusinessException(409, "La ficha ya finalizó"); }
   private void copy(FichaRequest r, Ficha e) {
@@ -848,11 +852,11 @@ PropietarioMoto o = propietarioActual(m.id);
     Pago previous = idempotentPayment(r, null, e.id);
     if (previous != null) return pago(previous);
     Pago pago = nuevoPago(r, e.total, montoCobrado(e.pagos)); pago.repuestoPedido = e; e.pagos.add(pago); db.persist(pago); recalcRepuestoPayment(e);
-    audit("REPUESTOS", "PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
+    audit("REPUESTOS", "PAGO", "Pago", pago.id, null, pago.monto.toPlainString(), r.idempotencyKey(), e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
   public PagoResponse anularRepuestoPago(UUID id, UUID pagoId) {
     RepuestoPedido e = db.getForUpdate(RepuestoPedido.class, id); Pago pago = pagoDe(e.pagos, pagoId);
-    anularPago(pago); recalcRepuestoPayment(e); audit("REPUESTOS", "ANULAR PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
+    anularPago(pago); recalcRepuestoPayment(e); audit("REPUESTOS", "ANULAR PAGO", "Pago", pago.id, "activo", "anulado", null, e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
   public RepuestoResponse repuestoItemEstado(UUID id, UUID itemId, StateRequest r) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
@@ -1033,7 +1037,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (accion != null && !accion.isBlank()) { w += " and lower(e.accion) like lower(concat('%',:act,'%'))"; ps.put("act", accion); }
     if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
-    return page("from Auditoria e", w, "from Auditoria e", ps, page, size, "fecha", "DESC", x -> { Auditoria a = (Auditoria) x; return new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion); });
+    return page("from Auditoria e", w, "from Auditoria e", ps, page, size, "fecha", "DESC", x -> { Auditoria a = (Auditoria) x; return new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion, a.entidad, a.entidadId, a.antes, a.despues, a.motivo, a.correlationId); });
   }
   private BigDecimal suma(String jpql, Map<String,Object> ps) { return money(db.one(jpql, BigDecimal.class, ps)); }
   public List<ReportResponse> summary() {

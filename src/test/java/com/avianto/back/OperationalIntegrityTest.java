@@ -129,6 +129,25 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void fichaStateAuditCapturesEntityAndStateTransition() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    Cliente c = cliente(UUID.randomUUID());
+    Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.motovehiculo = moto; ficha.cliente = c; ficha.estado = FichaState.PENDIENTE;
+    FichaTrabajo trabajo = new FichaTrabajo(); trabajo.ficha = ficha; trabajo.estadoTrabajo = TrabajoState.PENDIENTE; ficha.trabajos.add(trabajo);
+    when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);
+
+    api.fichaState(ficha.id, new ApiDtos.StateRequest("En proceso"));
+
+    var audit = org.mockito.ArgumentCaptor.forClass(Auditoria.class);
+    verify(db).persist(audit.capture());
+    assertEquals("Ficha", audit.getValue().entidad);
+    assertEquals(ficha.id, audit.getValue().entidadId);
+    assertEquals("Pendiente", audit.getValue().antes);
+    assertEquals("En proceso", audit.getValue().despues);
+  }
+
+  @Test
   void completingTheLastWorkKeepsTheFichaInProcessUntilReviewIsSent() {
     Motovehiculo moto = moto(UUID.randomUUID()); moto.estadoOperativo = MotoState.EN_PROCESO;
     Cliente cliente = cliente(UUID.randomUUID());

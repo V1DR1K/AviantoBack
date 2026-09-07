@@ -66,7 +66,7 @@ public final class ApiDtos {
   public record RevisionAprobarRequest(boolean forzada, String observacion, List<UUID> serviceIds) {}
   public record RevisionResponse(UUID id, UUID fichaId, String ficha, String estado, String aprobadoPor, Instant aprobadoAt, boolean forzada, String observacion, List<RevisionControlResponse> controles) {}
   public record AutocompleteResponse(UUID id, String label, String secondary) {}
-  public record AuditResponse(UUID id, Instant fecha, String usuario, String modulo, String accion, String descripcion) {}
+  public record AuditResponse(UUID id, Instant fecha, String usuario, String modulo, String accion, String descripcion, String entidad, UUID entidadId, String antes, String despues, String motivo, String correlationId) {}
   public record ReportResponse(String etiqueta, BigDecimal valor) {}
   public record DashboardOrderResponse(UUID id, String numero, String cliente, String moto, String estado, BigDecimal total, Instant createdAt) {}
   public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, List<DashboardOrderResponse> recientes) {}
