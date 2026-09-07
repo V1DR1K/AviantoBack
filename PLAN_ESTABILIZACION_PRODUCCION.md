@@ -1,6 +1,6 @@
 # Plan de estabilización y producción de Avianto
 
-Estado inicial: **BLOQUEADO**. Este plan acompaña el código y se actualiza con evidencia, no solamente con intención.
+Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con evidencia, no solamente con intención.
 
 ## Alcance aprobado
 
@@ -35,7 +35,7 @@ Estado inicial: **BLOQUEADO**. Este plan acompaña el código y se actualiza con
 - [x] Limitar cantidades y precios de repuestos a dos decimales.
 - [x] Validar fechas de ingreso, entrega estimada, vencimiento y kilometraje.
 - [ ] Reemplazar escrituras implícitas en GET por comandos explícitos.
-- [ ] Agregar idempotencia a pagos.
+- [x] Agregar idempotencia a pagos.
 - [ ] Agregar locking/versionado de todos los hijos mutables.
 - [ ] Persistir snapshots de controles de revisión y venta.
 
@@ -65,10 +65,10 @@ Estado inicial: **BLOQUEADO**. Este plan acompaña el código y se actualiza con
 
 ## Fase 4: reportes, auditoría y contratos
 
-- [ ] Definir semántica de cada métrica financiera y excluir cancelados/futuros donde corresponda.
-- [ ] Igualar filtros de pantalla y exportación.
-- [ ] Implementar o eliminar el parámetro `columns`.
-- [ ] Paginar auditoría y consultas grandes.
+- [~] Definir semántica de cada métrica financiera y excluir cancelados/futuros donde corresponda. Resumen y evolución ya excluyen fichas canceladas y fechas futuras; queda validar métricas sobre datos representativos.
+- [x] Igualar filtros de pantalla y exportación.
+- [x] Implementar o eliminar el parámetro `columns`.
+- [x] Paginar auditoría y consultas grandes.
 - [ ] Registrar entidad, ID, antes/después, motivo y correlación en auditoría.
 - [ ] Alinear README, contrato API, wiki y OpenAPI con el código actual.
 

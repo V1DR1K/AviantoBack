@@ -210,6 +210,29 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void paymentIdempotencyReturnsTheExistingPaymentWithoutPersistingAnotherOne() {
+    Ficha ficha = fichaParaPago("500000.00");
+    Pago existing = new Pago(); existing.id = UUID.randomUUID(); existing.ficha = ficha; existing.monto = new BigDecimal("200.00"); existing.fecha = LocalDate.now();
+    when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);
+    when(db.one(contains("idempotencyKey"), eq(Pago.class), anyMap())).thenReturn(existing);
+
+    ApiDtos.PagoResponse response = api.registrarFichaPago(ficha.id, new ApiDtos.PagoRegistroRequest(new BigDecimal("200.00"), existing.fecha, null, "payment-1"));
+
+    assertEquals(existing.id, response.id());
+    verify(db, never()).persist(isA(Pago.class));
+  }
+
+  @Test
+  void paymentIdempotencyRejectsReuseAcrossDocuments() {
+    Pago existing = new Pago(); existing.id = UUID.randomUUID(); existing.ficha = fichaParaPago("500.00");
+    when(db.getForUpdate(eq(RepuestoPedido.class), any(UUID.class))).thenReturn(repuestoParaPago("500.00"));
+    when(db.one(contains("idempotencyKey"), eq(Pago.class), anyMap())).thenReturn(existing);
+
+    assertThrows(BusinessException.class, () -> api.registrarRepuestoPago(UUID.randomUUID(), new ApiDtos.PagoRegistroRequest(new BigDecimal("100.00"), null, null, "payment-1")));
+    verify(db, never()).persist(isA(Pago.class));
+  }
+
+  @Test
   void paidFichaCannotBeCancelledAndPaymentsCannotUseFutureDates() {
     Ficha ficha = fichaParaPago("100.00"); ficha.estado = FichaState.EN_PROCESO;
     when(db.getForUpdate(Ficha.class, ficha.id)).thenReturn(ficha);

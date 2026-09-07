@@ -555,6 +555,8 @@ PropietarioMoto o = propietarioActual(m.id);
   public PagoResponse registrarFichaPago(UUID id, PagoRegistroRequest r) {
     Ficha e = db.getForUpdate(Ficha.class, id);
     if (e.estado == FichaState.CANCELADA) throw new BusinessException(409, "No puede registrarse un pago en una ficha cancelada");
+    Pago previous = idempotentPayment(r, e.id, null);
+    if (previous != null) return pago(previous);
     Pago pago = nuevoPago(r, e.total, montoCobrado(e.pagos)); pago.ficha = e; e.pagos.add(pago); db.persist(pago); recalcFichaPayment(e);
     audit("Fichas", "PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
@@ -687,8 +689,21 @@ PropietarioMoto o = propietarioActual(m.id);
     BigDecimal monto = money(request.monto());
     if (monto.signum() <= 0) throw new BusinessException(422, "El monto debe ser mayor a cero");
     if (monto.compareTo(saldo(total, cobrado)) > 0) throw new BusinessException(422, "El monto supera el saldo pendiente");
-    Pago pago = new Pago(); pago.monto = monto; pago.fecha = fecha; pago.medioPago = MedioPago.of(request.medioPago()); pago.creadoPor = actor();
+    Pago pago = new Pago(); pago.idempotencyKey = blank(request.idempotencyKey()); pago.monto = monto; pago.fecha = fecha; pago.medioPago = MedioPago.of(request.medioPago()); pago.creadoPor = actor();
     return pago;
+  }
+  private Pago idempotentPayment(PagoRegistroRequest request, UUID fichaId, UUID repuestoId) {
+    String key = blank(request.idempotencyKey());
+    if (key == null) return null;
+    Pago previous = db.one("select p from Pago p where p.idempotencyKey=:key", Pago.class, Map.of("key", key));
+    if (previous == null) return null;
+    boolean sameFicha = fichaId != null && previous.ficha != null && previous.ficha.id.equals(fichaId);
+    boolean sameRepuesto = repuestoId != null && previous.repuestoPedido != null && previous.repuestoPedido.id.equals(repuestoId);
+    if (!sameFicha && !sameRepuesto) throw new BusinessException(409, "La clave de idempotencia ya fue utilizada en otro documento");
+    LocalDate date = request.fecha() == null ? today() : request.fecha();
+    MedioPago method = MedioPago.of(request.medioPago());
+    if (previous.monto == null || previous.monto.compareTo(money(request.monto())) != 0 || !Objects.equals(previous.fecha, date) || previous.medioPago != method) throw new BusinessException(409, "La clave de idempotencia ya fue utilizada con otros datos");
+    return previous;
   }
   private Pago pagoDe(List<Pago> pagos, UUID pagoId) { return pagos.stream().filter(pago -> pago.id.equals(pagoId)).findFirst().orElseThrow(() -> new NotFoundException("El pago no existe")); }
   private void anularPago(Pago pago) { if (pago.anuladoAt != null) throw new BusinessException(409, "El pago ya fue anulado"); pago.anuladoAt = Instant.now(); pago.anuladoPor = actor(); }
@@ -830,6 +845,8 @@ PropietarioMoto o = propietarioActual(m.id);
   public PagoResponse registrarRepuestoPago(UUID id, PagoRegistroRequest r) {
     RepuestoPedido e = db.getForUpdate(RepuestoPedido.class, id);
     if (e.estado == RepuestoPedidoState.CANCELADO) throw new BusinessException(409, "No puede registrarse un pago en un pedido cancelado");
+    Pago previous = idempotentPayment(r, null, e.id);
+    if (previous != null) return pago(previous);
     Pago pago = nuevoPago(r, e.total, montoCobrado(e.pagos)); pago.repuestoPedido = e; e.pagos.add(pago); db.persist(pago); recalcRepuestoPayment(e);
     audit("REPUESTOS", "PAGO", e.numero + " " + pago.monto.toPlainString()); return pago(pago);
   }
@@ -1007,7 +1024,7 @@ PropietarioMoto o = propietarioActual(m.id);
   private long activeAdminCount() { return db.count("select count(u) from AppUser u where u.rol=:role and u.activo=true and u.deletedAt is null", Map.of("role", Role.ADMINISTRACION)); }
 
   // ---------- Auditoría / reportes / dashboard ----------
-  public List<AuditResponse> audits(String q, UUID registrarId, String modulo, String accion, Instant desde, Instant hasta) {
+  public PageResponse<AuditResponse> audits(String q, UUID registrarId, String modulo, String accion, Instant desde, Instant hasta, int page, int size) {
     Map<String,Object> ps = p();
     String w = " where 1=1";
     if (q != null && !q.isBlank()) { w += " and (lower(e.descripcion) like :q or lower(e.accion) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
@@ -1016,21 +1033,20 @@ PropietarioMoto o = propietarioActual(m.id);
     if (accion != null && !accion.isBlank()) { w += " and lower(e.accion) like lower(concat('%',:act,'%'))"; ps.put("act", accion); }
     if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
-    w += " order by e.fecha desc";
-    return db.all("select e from Auditoria e" + w, Auditoria.class, ps).stream().map(a -> new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion)).toList();
+    return page("from Auditoria e", w, "from Auditoria e", ps, page, size, "fecha", "DESC", x -> { Auditoria a = (Auditoria) x; return new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion); });
   }
   private BigDecimal suma(String jpql, Map<String,Object> ps) { return money(db.one(jpql, BigDecimal.class, ps)); }
   public List<ReportResponse> summary() {
-    Map<String,Object> ps = Map.of("desde", today().minusDays(30));
+    Map<String,Object> ps = Map.of("desde", today().minusDays(30), "hasta", today());
     return List.of(
-      new ReportResponse("Fichas último mes", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.fechaIngreso >= :desde", ps))),
+      new ReportResponse("Fichas último mes", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado <> com.avianto.back.FichaState.CANCELADA and e.fechaIngreso between :desde and :hasta", ps))),
       new ReportResponse("Motos con service", BigDecimal.valueOf(nextServices().stream().filter(row -> !row.sinReferencia()).count())),
-      new ReportResponse("En proceso", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado in ('PENDIENTE','EN_PROCESO','REVISION','TERMINADA')", Map.of())))
+      new ReportResponse("En proceso", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado in (com.avianto.back.FichaState.PENDIENTE,com.avianto.back.FichaState.EN_PROCESO,com.avianto.back.FichaState.REVISION)", Map.of())))
     );
   }
   public List<ReportResponse> evolution() {
     Map<YearMonth, BigDecimal> acc = new TreeMap<>();
-    for (Object[] row : db.all("select e.fechaIngreso, e.total from Ficha e where e.deletedAt is null and e.fechaIngreso is not null", Object[].class, Map.of())) {
+    for (Object[] row : db.all("select e.fechaIngreso, e.total from Ficha e where e.deletedAt is null and e.estado <> com.avianto.back.FichaState.CANCELADA and e.fechaIngreso between :desde and :hasta", Object[].class, Map.of("desde", LocalDate.of(2000, 1, 1), "hasta", today()))) {
       YearMonth ym = YearMonth.from((LocalDate) row[0]);
       acc.merge(ym, money((BigDecimal) row[1]), BigDecimal::add);
     }

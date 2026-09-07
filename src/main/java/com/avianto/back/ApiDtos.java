@@ -32,7 +32,9 @@ public final class ApiDtos {
   public record FichaRequest(@NotNull UUID clienteId, @NotNull UUID motoId, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, @PositiveOrZero Integer kilometrajeIngreso, LocalDate vencimiento, String observaciones, @NotNull @DecimalMin("0.00") BigDecimal descuentoGlobal, boolean iva, @Valid List<FichaTrabajoRequest> trabajos) {}
   public record FichaResponse(UUID id, String numero, UUID clienteId, UUID motoId, String cliente, String moto, String patente, LocalDate vencimiento, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, LocalDate fechaEntregaReal, Integer kilometrajeIngreso, String observaciones, BigDecimal descuentoGlobal, boolean iva, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, Instant creadoEn, List<FichaTrabajoResponse> trabajos, List<PhotoResponse> fotos) {}
   public record StateRequest(@NotBlank String estado) {}
-  public record PagoRegistroRequest(@NotNull @DecimalMin(value="0.01") @Digits(integer=12,fraction=2) BigDecimal monto, LocalDate fecha, String medioPago) {}
+  public record PagoRegistroRequest(@NotNull @DecimalMin(value="0.01") @Digits(integer=12,fraction=2) BigDecimal monto, LocalDate fecha, String medioPago, @Size(max=120) String idempotencyKey) {
+    public PagoRegistroRequest(BigDecimal monto, LocalDate fecha, String medioPago) { this(monto, fecha, medioPago, null); }
+  }
   public record PagoResponse(UUID id, BigDecimal monto, LocalDate fecha, String medioPago, boolean anulado, Instant anuladoAt) {}
   public record PhotoRequest(@NotBlank String filename, @NotBlank String contentType, @NotBlank String base64) {}
   public record PhotoResponse(UUID id, String filename, String contentType, Instant createdAt, String url) {}
