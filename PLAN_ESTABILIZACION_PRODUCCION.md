@@ -59,7 +59,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Corregir asociación del propietario en edición de motos.
 - [~] Cancelar respuestas viejas de listados, detalle de moto, ficha, administración y catálogos. Quedan cargas puntuales dentro de diálogos de repuestos y formularios secundarios.
 - [x] Hacer idempotente y reintentable la carga de fotos.
-- [ ] Agregar protección de cambios sin guardar a edición de fichas.
+- [x] Agregar protección de cambios sin guardar a edición de fichas.
 - [ ] Completar estados de carga, error, retry y empty.
 - [ ] Agregar pruebas E2E de los flujos críticos.
 
