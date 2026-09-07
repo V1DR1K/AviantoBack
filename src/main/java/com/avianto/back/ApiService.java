@@ -308,7 +308,12 @@ public class ApiService {
     }
     return page("from VentaFicha e join e.motovehiculo", where, "from VentaFicha e", ps, page, size, sortable(sort, Set.of("numero", "createdAt", "updatedAt"), "createdAt"), dir, x -> ventaFicha((VentaFicha) x));
   }
-  public VentaFichaResponse ventaFicha(UUID id) { return ventaFicha(db.getForUpdate(VentaFicha.class, id)); }
+  public VentaFichaResponse ventaFicha(UUID id) { return ventaFicha(db.get(VentaFicha.class, id)); }
+  public VentaFichaResponse sincronizarVentaChecklist(UUID fichaId) {
+    VentaFicha ficha = ventaFichaForUpdate(fichaId);
+    sincronizarChecklist(ficha);
+    return ventaFicha(ficha);
+  }
   public VentaFichaResponse ventaFichaPorMoto(UUID motoId) {
     VentaFicha ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null and e.finalizadaAt is null order by e.createdAt desc", VentaFicha.class, Map.of("moto", motoId));
     if (ficha == null) ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null order by e.createdAt desc", VentaFicha.class, Map.of("moto", motoId));
@@ -440,7 +445,6 @@ public class ApiService {
   private boolean obligatoriosCompletos(VentaFicha ficha) { return !ficha.items.isEmpty() && ficha.items.stream().filter(i -> i.obligatorio).allMatch(i -> i.estado == VentaChecklistState.REALIZADO); }
   private boolean citaCompleta(TransferenciaMoto transferencia) { return transferencia.citaFecha != null && transferencia.citaHora != null && transferencia.citaLugar != null && !transferencia.citaLugar.isBlank(); }
   private VentaFichaResponse ventaFicha(VentaFicha ficha) {
-    sincronizarChecklist(ficha);
     List<VentaFichaItemResponse> items = ficha.items.stream().sorted(Comparator.comparingInt(i -> i.orden)).map(i -> new VentaFichaItemResponse(i.id, i.etiqueta, i.orden, i.obligatorio, i.estado.label(), i.realizadoAt, i.realizadoPor == null ? null : i.realizadoPor.nombre)).toList();
     TransferenciaMoto transferencia = ficha.transferencia;
     VentaTransferenciaResponse transferenciaDto = transferencia == null ? null : new VentaTransferenciaResponse(transferencia.id, transferencia.fechaTransferencia, transferencia.citaFecha, transferencia.citaHora, transferencia.citaLugar, transferencia.asistenciaAt, transferencia.asistenciaPor == null ? null : transferencia.asistenciaPor.nombre, transferencia.canceladaAt, transferencia.canceladaPor == null ? null : transferencia.canceladaPor.nombre, transferencia.finalizadaAt, transferencia.finalizadaPor == null ? null : transferencia.finalizadaPor.nombre, transferencia.createdAt);
@@ -932,10 +936,16 @@ PropietarioMoto o = propietarioActual(m.id);
 
   // ---------- Revisión final de entrega ----------
   public RevisionResponse revision(UUID fichaId) {
+    Ficha f = db.get(Ficha.class, fichaId);
+    if (f.estado != FichaState.REVISION) throw new BusinessException(409, "La ficha debe estar en revisión");
+    Revision r = db.one("SELECT r FROM Revision r WHERE r.ficha.id=:f and r.deletedAt is null", Revision.class, Map.of("f", f.id));
+    if (r == null) throw new NotFoundException("La revisión todavía no fue inicializada");
+    return revisionDto(r);
+  }
+  public RevisionResponse prepararRevision(UUID fichaId) {
     Ficha f = db.getForUpdate(Ficha.class, fichaId);
     if (f.estado != FichaState.REVISION) throw new BusinessException(409, "La ficha debe estar en revisión");
-    Revision r = findOrRestoreRevision(f);
-    return revisionDto(r);
+    return revisionDto(findOrRestoreRevision(f));
   }
   public RevisionResponse updateControlEstado(UUID fichaId, UUID controlId, RevisionControlRequest r) {
     Revision rev = revisionEntity(fichaId);

@@ -52,6 +52,7 @@ public class ApiController {
   // ---------- Ventas ----------
   @GetMapping("/ventas") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public PageResponse<VentaFichaResponse> ventasFicha(@RequestParam(required=false)String q,@RequestParam(required=false)UUID motoId,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="createdAt")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.ventaFichas(q,motoId,estado,page,size,sortBy,direction);}
   @GetMapping("/ventas/{id}") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaFicha(@PathVariable UUID id){return api.ventaFicha(id);}
+  @PostMapping("/ventas/{id}/checklist/sincronizar") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse sincronizarVentaChecklist(@PathVariable UUID id){return api.sincronizarVentaChecklist(id);}
   @GetMapping("/motovehiculos/{id}/venta") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaFichaPorMoto(@PathVariable UUID id){return api.ventaFichaPorMoto(id);}
   @PatchMapping("/ventas/{id}/items/{itemId}") @PreAuthorize("hasAnyAuthority('ROLE_ADMINISTRACION','ROLE_OPERARIO')") public VentaFichaResponse ventaItem(@PathVariable UUID id,@PathVariable UUID itemId,@Valid @RequestBody VentaChecklistItemRequest r){return api.updateVentaChecklistItem(id,itemId,r);}
   @PutMapping("/ventas/{id}/comprador") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaComprador(@PathVariable UUID id,@Valid @RequestBody VentaCompradorRequest r){return api.updateVentaComprador(id,r);}
@@ -102,6 +103,7 @@ public class ApiController {
 
   // ---------- Revisión final de entrega ----------
   @GetMapping("/fichas/{id}/revision") public RevisionResponse revision(@PathVariable UUID id){return api.revision(id);}
+  @PostMapping("/fichas/{id}/revision/preparar") public RevisionResponse prepararRevision(@PathVariable UUID id){return api.prepararRevision(id);}
   @PatchMapping("/fichas/{id}/revision/controles/{controlId}") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION') or hasAuthority('PERM_REVIEW_WRITE')") public RevisionResponse revisionControl(@PathVariable UUID id,@PathVariable UUID controlId,@Valid @RequestBody RevisionControlRequest r){return api.updateControlEstado(id,controlId,r);}
   @PostMapping("/fichas/{id}/revision/aprobar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public RevisionResponse aprobarRevision(@PathVariable UUID id,@Valid @RequestBody RevisionAprobarRequest r){return api.aprobarRevision(id,r);}
 

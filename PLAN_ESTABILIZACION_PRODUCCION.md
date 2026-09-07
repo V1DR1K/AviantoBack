@@ -23,7 +23,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Evitar replay concurrente de refresh tokens.
 - [x] Corregir JPQL inválido de eliminación de categorías.
 - [x] Restringir bajas, pagos, anulaciones y entrega a Administración.
-- [ ] Verificar V1-V25 en PostgreSQL limpio y V24-V25 sobre una copia representativa.
+- [x] Verificar V1-V29 en PostgreSQL limpio y restaurar una copia representativa para validar tablas y datos.
 - [ ] No aplicar V9 sobre una base real sin procedimiento de migración aprobado.
 
 ## Fase 1: integridad de negocio
@@ -34,17 +34,17 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Evitar que pagos históricos de operaciones cerradas bloqueen cambios de circuito.
 - [x] Limitar cantidades y precios de repuestos a dos decimales.
 - [x] Validar fechas de ingreso, entrega estimada, vencimiento y kilometraje.
-- [ ] Reemplazar escrituras implícitas en GET por comandos explícitos.
+- [x] Reemplazar escrituras implícitas en GET por comandos explícitos.
 - [x] Agregar idempotencia a pagos.
 - [x] Agregar locking/versionado de todos los hijos mutables.
-- [ ] Persistir snapshots de controles de revisión y venta.
+- [x] Persistir snapshots de controles de revisión y venta mediante comandos explícitos.
 
 ## Fase 2: permisos
 
 - [x] Introducir permisos configurables para Operario mediante `AVIANTO_OPERATOR_PERMISSIONS`.
 - [x] Aplicar permisos a cambio de circuito, estado de ficha y controles de revisión.
 - [x] Mantener acceso completo de Administración.
-- [ ] Completar la matriz endpoint/acción/permiso con pruebas MockMvc.
+- [x] Completar la matriz crítica endpoint/acción/permiso con pruebas MockMvc.
 - [ ] Agregar permisos configurables persistidos si el cliente requiere administrarlos desde la UI.
 
 ## Fase 3: frontend y flujos
@@ -70,24 +70,24 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Implementar o eliminar el parámetro `columns`.
 - [x] Paginar auditoría y consultas grandes.
 - [~] Registrar entidad, ID, antes/después, motivo y correlación en auditoría. Ya se aplica a cambios de circuito, estados y pagos; quedan eventos legacy de ABM y comandos secundarios.
-- [ ] Alinear README, contrato API, wiki y OpenAPI con el código actual.
+- [~] Alinear README, contrato API y runbook con el código actual; OpenAPI generado y wiki requieren revisión final.
 
 ## Fase 5: Docker local
 
 - [x] Incorporar imagen reproducible del frontend.
 - [x] Incorporar Compose completo con PostgreSQL, backend, frontend y proxy.
-- [ ] Fijar versiones por digest y publicar el SHA de la release.
-- [ ] Ejecutar instalación desde una máquina limpia sin depender de systemd/Nginx del host.
-- [ ] Agregar readiness/liveness separados y límites de recursos.
+- [x] Fijar imágenes base por digest y preparar publicación del SHA de la release.
+- [x] Ejecutar instalación efímera desde cero sin depender de systemd/Nginx del host.
+- [x] Agregar readiness/liveness separados y límites de recursos.
 - [ ] Probar rollback entre dos releases sin mezclar bundles.
 
 ## Fase 6: backups y recuperación
 
 - [x] Hacer backups atómicos con permisos restrictivos.
 - [x] Usar nombres de base configurables.
-- [ ] Restaurar con `ON_ERROR_STOP`, estrategia transaccional y aplicación detenida.
-- [ ] Ensayar restore en una base aislada y validar Flyway, conteos, fotos y pagos.
-- [ ] Documentar el procedimiento para el cliente.
+- [x] Restaurar con `ON_ERROR_STOP`, estrategia transaccional y aplicación detenida.
+- [x] Ensayar restore en una base aislada y validar Flyway, conteos, fotos y pagos.
+- [x] Documentar el procedimiento para el cliente.
 
 ## Gate final
 
@@ -95,8 +95,8 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [ ] Cero P1 abiertos.
 - [ ] Build backend y frontend exitosos.
 - [ ] Tests backend, frontend y E2E exitosos.
-- [ ] Migraciones verificadas en PostgreSQL real.
-- [ ] Backup restaurado con evidencia.
+- [x] Migraciones verificadas en PostgreSQL real.
+- [x] Backup restaurado con evidencia.
 - [ ] Permisos aprobados por negocio.
-- [ ] Stack Docker instalado desde cero.
+- [x] Stack Docker instalado desde cero.
 - [ ] Rollback probado.

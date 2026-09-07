@@ -1,6 +1,10 @@
 services:
   postgres:
-    image: postgres:17-alpine
+    image: postgres@sha256:18cfe3ef5e6815560c98237d6216d1e5119702fb0f3894c8785dd58b8bbe5d73
+    mem_limit: 512m
+    cpus: 0.5
+    pids_limit: 100
+    security_opt: ["no-new-privileges:true"]
     environment:
       POSTGRES_DB: ${POSTGRES_DB}
       POSTGRES_USER: ${POSTGRES_USER}
@@ -15,6 +19,10 @@ services:
     logging: {driver: local, options: {max-size: 10m, max-file: "3"}}
   app:
     build: .
+    mem_limit: 768m
+    cpus: 1.0
+    pids_limit: 256
+    security_opt: ["no-new-privileges:true"]
     env_file: .env
     environment:
       DATABASE_URL: jdbc:postgresql://postgres:5432/${POSTGRES_DB}
@@ -22,7 +30,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health || exit 1"]
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness || exit 1"]
       interval: 20s
       timeout: 5s
       retries: 5

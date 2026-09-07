@@ -39,7 +39,7 @@ class SaleWorkflowTest {
   }
 
   @Test
-  void openingAnExistingSaleAddsMissingActiveTemplateItems() {
+  void synchronizingAnExistingSaleAddsMissingActiveTemplateItems() {
     Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
     VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
     sale.items.clear();
@@ -47,7 +47,7 @@ class SaleWorkflowTest {
     when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
     when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
 
-    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+    ApiDtos.VentaFichaResponse response = api.sincronizarVentaChecklist(sale.id);
 
     assertEquals(1, response.items().size());
     assertEquals("Título", response.items().getFirst().etiqueta());
@@ -70,24 +70,38 @@ class SaleWorkflowTest {
   }
 
   @Test
-  void openingAnExistingSaleRefreshesTheRequirementFlagFromActiveTemplate() {
+  void synchronizingAnExistingSaleRefreshesTheRequirementFlagFromActiveTemplate() {
     Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
     VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
     VentaChecklistPlantilla template = new VentaChecklistPlantilla(); template.etiqueta = "Formulario"; template.orden = 4; template.obligatorio = true; template.activo = true;
     when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
     when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
 
-    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+    ApiDtos.VentaFichaResponse response = api.sincronizarVentaChecklist(sale.id);
 
     assertTrue(sale.items.getFirst().obligatorio);
     assertFalse(response.obligatoriosCompletos());
   }
 
   @Test
+  void readingAnExistingSaleDoesNotSynchronizeChecklist() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
+    VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
+    sale.items.clear();
+    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
+
+    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+
+    assertTrue(response.items().isEmpty());
+    verify(db, never()).getForUpdate(VentaFicha.class, sale.id);
+    verify(db, never()).persist(any());
+  }
+
+  @Test
   void finalizedSaleKeepsItsSoldStatusAfterMotorcycleReentry() {
     Motovehiculo moto = moto(); moto.seccion = MotoSection.TALLER; moto.ingresada = true; moto.estadoOperativo = MotoState.INGRESADA_TALLER;
     VentaFicha sale = sale(moto, cliente("Vendedor"), cliente("Comprador"), false); sale.finalizadaAt = Instant.now();
-    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
 
     ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
 

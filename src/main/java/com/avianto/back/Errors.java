@@ -19,6 +19,7 @@ class BusinessException extends RuntimeException { final int status; BusinessExc
   @ExceptionHandler(BusinessException.class) ResponseEntity<?> business(BusinessException e) { return error(e.status,e.getMessage()); }
   @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<?> constraint(DataIntegrityViolationException e) { log.error("Violación de integridad de datos", e); return error(409,"La operación viola una restricción de integridad"); }
   @ExceptionHandler(ConstraintViolationException.class) ResponseEntity<?> constraintValidation(ConstraintViolationException e) { return error(400,"Datos inválidos"); }
+  @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class) ResponseEntity<?> accessDenied(org.springframework.security.access.AccessDeniedException e) { return error(403,"Acceso denegado"); }
   @ExceptionHandler({HttpMessageNotReadableException.class,MethodArgumentTypeMismatchException.class}) ResponseEntity<?> malformedRequest(Exception e) { return error(400,"Datos inválidos"); }
   @ExceptionHandler(org.springframework.web.bind.MethodArgumentNotValidException.class) ResponseEntity<?> validation(org.springframework.web.bind.MethodArgumentNotValidException e) { return error(400,e.getBindingResult().getAllErrors().getFirst().getDefaultMessage()); }
   @ExceptionHandler(Exception.class) ResponseEntity<?> unexpected(Exception e) { log.error("Error no controlado",e); return error(500,"Error interno"); }

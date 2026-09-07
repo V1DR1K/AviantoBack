@@ -1,6 +1,6 @@
 # AviantoBack
 
-Standalone Java 21 / Spring Boot 3 backend for Avianto. The API base path is `/api`; Swagger is available at `/swagger-ui.html` and health at `/actuator/health`.
+Standalone Java 21 / Spring Boot 3 backend for Avianto. The API base path is `/api`; Swagger is restricted to Administration and health probes are available at `/actuator/health/liveness` and `/actuator/health/readiness`.
 
 ## Run locally
 
@@ -28,4 +28,4 @@ For a locally installed PostgreSQL, export the variables from `.env` and run `./
 
 Run `./mvnw test`. The complete local stack can be validated with `docker compose --env-file .env -f docker-compose.full.yml config` before startup.
 
-Backups are created atomically with mode `0600`. Restore requires an explicit confirmation: `AVIANTO_ALLOW_RESTORE=1 ./restore.sh /ruta/al/respaldo.sql.gz`; stop the application or isolate the database before restoring.
+Backups are created atomically with mode `0600`. Restore requires an explicit confirmation: `AVIANTO_ALLOW_RESTORE=1 ./restore.sh /ruta/al/respaldo.sql.gz`; stop the application before restoring. Use `./ops/validate-migrations.sh`, `./ops/verify-restore.sh` and `node ops/api-smoke.mjs` as release evidence. See `docs/release-runbook.md`.
