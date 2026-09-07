@@ -36,7 +36,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Validar fechas de ingreso, entrega estimada, vencimiento y kilometraje.
 - [ ] Reemplazar escrituras implícitas en GET por comandos explícitos.
 - [x] Agregar idempotencia a pagos.
-- [ ] Agregar locking/versionado de todos los hijos mutables.
+- [x] Agregar locking/versionado de todos los hijos mutables.
 - [ ] Persistir snapshots de controles de revisión y venta.
 
 ## Fase 2: permisos
