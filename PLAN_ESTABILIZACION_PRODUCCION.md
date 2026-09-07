@@ -57,7 +57,7 @@ Estado actual: **EN CURSO**. Este plan acompaña el código y se actualiza con e
 - [x] Corregir modal de menú móvil y bloqueo de scroll.
 - [x] Mantener confirmaciones abiertas hasta completar la mutación.
 - [x] Corregir asociación del propietario en edición de motos.
-- [ ] Cancelar respuestas viejas de todas las listas y filtros.
+- [~] Cancelar respuestas viejas de listados principales: perfiles, repuestos, transferencias, ventas y fichas. Quedan paneles secundarios y cargas puntuales.
 - [ ] Hacer idempotente y reintentable la carga de fotos.
 - [ ] Agregar protección de cambios sin guardar a edición de fichas.
 - [ ] Completar estados de carga, error, retry y empty.
