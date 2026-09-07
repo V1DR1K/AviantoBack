@@ -74,12 +74,35 @@ class OperationalIntegrityTest {
   }
 
   @Test
-  void soldMotorcycleIsTerminalForIntake() {
+  void soldMotorcycleCanReenterTheWorkshop() {
     UUID motoId = UUID.randomUUID();
     Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.estadoOperativo = MotoState.VENDIDA;
     when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
 
-    assertThrows(BusinessException.class, () -> api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("TALLER")));
+    ApiDtos.MotorcycleResponse response = api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("TALLER"));
+
+    assertTrue(moto.ingresada);
+    assertEquals(MotoSection.TALLER, moto.seccion);
+    assertEquals(MotoState.INGRESADA_TALLER.label(), response.estado());
+  }
+
+  @Test
+  void soldMotorcycleCanStartANewSaleAfterReentering() {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.ingresada = false; moto.seccion = MotoSection.VENTA; moto.estadoOperativo = MotoState.VENDIDA;
+    Cliente seller = cliente(UUID.randomUUID()); seller.nombre = "Nuevo vendedor";
+    PropietarioMoto owner = owner(moto, seller);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+    when(db.nextVal("ficha_venta_numero_seq")).thenReturn(2L);
+    when(db.all(contains("from VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of());
+
+    ApiDtos.MotorcycleResponse response = api.ingresarMoto(motoId, new ApiDtos.IntakeRequest("VENTA"));
+
+    assertTrue(moto.ingresada);
+    assertEquals(MotoSection.VENTA, moto.seccion);
+    assertEquals(MotoState.EN_VENTA.label(), response.estado());
+    verify(db).persist(isA(VentaFicha.class));
   }
 
   @Test
@@ -259,6 +282,13 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void saleReentryMigrationKeepsOnlyOneActiveSalePerMotorcycle() throws Exception {
+    String migration = java.nio.file.Files.readString(java.nio.file.Path.of("src/main/resources/db/migration/V25__venta_reingreso_moto.sql"));
+    assertTrue(migration.contains("DROP INDEX IF EXISTS ux_ficha_venta_motovehiculo_activa"));
+    assertTrue(migration.contains("finalizada_at IS NULL"));
+  }
+
+  @Test
   void fichaCannotBeOpenedWhenTheMotorcycleAlreadyHasOne() {
     UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
     Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);
@@ -429,5 +459,6 @@ class OperationalIntegrityTest {
   private static Ficha fichaParaPago(String total) { Ficha ficha = fichaConTrabajos(TrabajoState.PENDIENTE); ficha.total = new BigDecimal(total); return ficha; }
   private static RepuestoPedido repuestoParaPago(String total) { RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.motovehiculo = moto(UUID.randomUUID()); pedido.cliente = cliente(UUID.randomUUID()); pedido.total = new BigDecimal(total); return pedido; }
   private static Cliente cliente(UUID id) { Cliente c = new Cliente(); c.id = id; c.nombre = "Cliente"; return c; }
+  private static PropietarioMoto owner(Motovehiculo moto, Cliente client) { PropietarioMoto owner = new PropietarioMoto(); owner.motovehiculo = moto; owner.cliente = client; return owner; }
   private static Motovehiculo moto(UUID id) { Motovehiculo m = new Motovehiculo(); m.id = id; m.activo = true; m.seccion = MotoSection.TALLER; m.ingresada = true; m.estadoOperativo = MotoState.INGRESADA_TALLER; m.marca = new MarcaMoto(); m.marca.id = UUID.randomUUID(); m.marca.nombre = "Honda"; return m; }
 }

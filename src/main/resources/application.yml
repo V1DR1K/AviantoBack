@@ -22,5 +22,6 @@ app:
   jwt.refresh-days: ${JWT_REFRESH_DAYS:14}
   timezone: America/Argentina/Buenos_Aires
   cors.allowed-origins: ${CORS_ALLOWED_ORIGINS:https://avianto.neticar.com.ar}
+  permissions.operario: ${AVIANTO_OPERATOR_PERMISSIONS:FICHA_WRITE,REVIEW_WRITE,SALE_CHECKLIST,MOTO_CIRCUIT,SERVICE_WRITE}
 springdoc:
   swagger-ui.path: /swagger-ui.html

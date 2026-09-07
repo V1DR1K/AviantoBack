@@ -44,7 +44,7 @@ class SaleWorkflowTest {
     VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
     sale.items.clear();
     VentaChecklistPlantilla template = new VentaChecklistPlantilla(); template.etiqueta = "Título"; template.orden = 2; template.obligatorio = true; template.activo = true;
-    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
     when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
 
     ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
@@ -74,13 +74,34 @@ class SaleWorkflowTest {
     Motovehiculo moto = moto(); moto.seccion = MotoSection.VENTA; moto.ingresada = true; moto.estadoOperativo = MotoState.EN_VENTA;
     VentaFicha sale = sale(moto, cliente("Vendedor"), null, false);
     VentaChecklistPlantilla template = new VentaChecklistPlantilla(); template.etiqueta = "Formulario"; template.orden = 4; template.obligatorio = true; template.activo = true;
-    when(db.get(VentaFicha.class, sale.id)).thenReturn(sale);
+    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
     when(db.all(contains("VentaChecklistPlantilla"), eq(VentaChecklistPlantilla.class), anyMap())).thenReturn(List.of(template));
 
     ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
 
     assertTrue(sale.items.getFirst().obligatorio);
     assertFalse(response.obligatoriosCompletos());
+  }
+
+  @Test
+  void finalizedSaleKeepsItsSoldStatusAfterMotorcycleReentry() {
+    Motovehiculo moto = moto(); moto.seccion = MotoSection.TALLER; moto.ingresada = true; moto.estadoOperativo = MotoState.INGRESADA_TALLER;
+    VentaFicha sale = sale(moto, cliente("Vendedor"), cliente("Comprador"), false); sale.finalizadaAt = Instant.now();
+    when(db.getForUpdate(VentaFicha.class, sale.id)).thenReturn(sale);
+
+    ApiDtos.VentaFichaResponse response = api.ventaFicha(sale.id);
+
+    assertEquals("Vendida", response.estado());
+  }
+
+  @Test
+  void saleListFiltersCancelledAndFinalizedHistoryByFichaStatus() {
+    api.ventaFichas(null, null, "Vendida", 0, 10, "createdAt", "DESC");
+    verify(db).list(contains("e.finalizadaAt is not null"), eq(Object.class), anyMap(), eq(0), eq(10));
+
+    clearInvocations(db);
+    api.ventaFichas(null, null, "Cancelada", 0, 10, "createdAt", "DESC");
+    verify(db).list(contains("e.canceladaAt is not null"), eq(Object.class), anyMap(), eq(0), eq(10));
   }
 
   @Test
@@ -261,7 +282,7 @@ class SaleWorkflowTest {
 
     BusinessException error = assertThrows(BusinessException.class, () -> api.cambiarCircuito(moto.id, new ApiDtos.CircuitChangeRequest("VENTA", "Ingreso equivocado")));
 
-    assertEquals("La moto tiene pagos registrados", error.getMessage());
+    assertEquals("La moto tiene pagos registrados en operaciones abiertas", error.getMessage());
     verify(db, never()).persist(isA(VentaFicha.class));
   }
 
@@ -302,7 +323,7 @@ class SaleWorkflowTest {
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", cancel.value());
     assertEquals("hasAuthority('ROLE_ADMINISTRACION')", complete.value());
     assertTrue(circuit.value().contains("ROLE_ADMINISTRACION"));
-    assertTrue(circuit.value().contains("ROLE_OPERARIO"));
+    assertTrue(circuit.value().contains("PERM_MOTO_CIRCUIT"));
   }
 
   private static VentaFicha sale(Motovehiculo moto, Cliente seller, Cliente buyer, boolean required) {

@@ -139,14 +139,13 @@ public class ApiService {
     if (r.clienteId() != null) assignInitialOwner(e.id, r.clienteId());
     audit("Motovehículos", "CREAR", e.patente); clearAutocomplete(); return moto(e);
   }
-  public MotorcycleResponse updateMotorcycle(UUID id, MotorcycleRequest r) { Motovehiculo e = db.get(Motovehiculo.class, id); copy(r, e); touch(e); audit("Motovehículos", "EDITAR", e.patente); clearAutocomplete(); return moto(e); }
+  public MotorcycleResponse updateMotorcycle(UUID id, MotorcycleRequest r) { Motovehiculo e = db.get(Motovehiculo.class, id); if (e.deletedAt != null) throw new BusinessException(409, "La moto está eliminada"); copy(r, e); touch(e); audit("Motovehículos", "EDITAR", e.patente); clearAutocomplete(); return moto(e); }
   public MotorcycleResponse ingresarMoto(UUID id, IntakeRequest r) {
     Motovehiculo e = db.get(Motovehiculo.class, id);
     if (!e.activo || e.deletedAt != null) throw new BusinessException(409, "La moto está inactiva");
     if (e.ingresada) throw new BusinessException(409, "La moto ya está ingresada en " + (e.seccion == null ? "el taller" : e.seccion.label()));
     if (e.estadoOperativo == null) throw new BusinessException(409, "La moto tiene un estado inválido");
-    if (e.estadoOperativo == MotoState.VENDIDA) throw new BusinessException(409, "La moto vendida es un estado terminal");
-    if (e.estadoOperativo != MotoState.DISPONIBLE && e.estadoOperativo != MotoState.ENTREGADA) throw new BusinessException(409, "La moto no está disponible para ingreso");
+    if (e.estadoOperativo != MotoState.DISPONIBLE && e.estadoOperativo != MotoState.ENTREGADA && e.estadoOperativo != MotoState.VENDIDA) throw new BusinessException(409, "La moto no está disponible para ingreso");
     MotoSection section = MotoSection.of(r.seccion());
     if (section == MotoSection.VENTA) crearFichaVenta(e);
     e.seccion = section;
@@ -162,11 +161,9 @@ public class ApiService {
     MotoSection origen = moto.seccion;
     if (origen == null) throw new BusinessException(409, "La moto no tiene un circuito asignado; debe ingresarse desde el flujo de ingreso");
     if (origen == destino) throw new BusinessException(409, "La moto ya está en el circuito seleccionado");
-    if (moto.estadoOperativo == MotoState.VENDIDA) throw new BusinessException(409, "La moto vendida es un estado terminal");
-    if (db.count("select count(f) from VentaFicha f where f.motovehiculo.id=:moto and f.deletedAt is null and f.finalizadaAt is not null", Map.of("moto", id)) > 0) throw new BusinessException(409, "La moto tiene una venta finalizada");
     assertNoOpenWorkshopRecords(moto.id);
     if (destino == MotoSection.VENTA) {
-      if (moto.estadoOperativo != MotoState.DISPONIBLE && moto.estadoOperativo != MotoState.ENTREGADA && moto.estadoOperativo != MotoState.INGRESADA_TALLER) throw new BusinessException(409, "La moto no puede pasar a Ventas desde su estado actual");
+      if (moto.estadoOperativo != MotoState.DISPONIBLE && moto.estadoOperativo != MotoState.ENTREGADA && moto.estadoOperativo != MotoState.INGRESADA_TALLER && moto.estadoOperativo != MotoState.VENDIDA) throw new BusinessException(409, "La moto no puede pasar a Ventas desde su estado actual");
       crearFichaVenta(moto);
       moto.seccion = MotoSection.VENTA;
       moto.ingresada = true;
@@ -190,10 +187,10 @@ public class ApiService {
   private void assertNoOpenWorkshopRecords(UUID motoId) {
     if (db.count("select count(f) from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null and f.estado not in (com.avianto.back.FichaState.ENTREGADA, com.avianto.back.FichaState.CANCELADA)", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene una ficha de Taller abierta");
     if (db.count("select count(r) from RepuestoPedido r where r.motovehiculo.id=:moto and r.deletedAt is null and r.estado <> com.avianto.back.RepuestoPedidoState.CANCELADO", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene pedidos de repuestos activos");
-    if (db.count("select count(p) from Pago p where p.ficha.motovehiculo.id=:moto and p.anuladoAt is null", Map.of("moto", motoId)) > 0 || db.count("select count(p) from Pago p where p.repuestoPedido.motovehiculo.id=:moto and p.anuladoAt is null", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene pagos registrados");
+    if (db.count("select count(p) from Pago p where p.ficha.motovehiculo.id=:moto and p.ficha.estado not in (com.avianto.back.FichaState.ENTREGADA, com.avianto.back.FichaState.CANCELADA) and p.anuladoAt is null", Map.of("moto", motoId)) > 0 || db.count("select count(p) from Pago p where p.repuestoPedido.motovehiculo.id=:moto and p.repuestoPedido.estado not in (com.avianto.back.RepuestoPedidoState.COMPLETADO, com.avianto.back.RepuestoPedidoState.CANCELADO) and p.anuladoAt is null", Map.of("moto", motoId)) > 0) throw new BusinessException(409, "La moto tiene pagos registrados en operaciones abiertas");
   }
   public MotorcycleResponse completarVenta(UUID id) {
-    VentaFicha venta = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null", VentaFicha.class, Map.of("moto", id));
+    VentaFicha venta = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null and e.finalizadaAt is null order by e.createdAt desc", VentaFicha.class, Map.of("moto", id));
     if (venta == null) throw new NotFoundException("Ficha de venta inexistente");
     completarFichaVenta(venta.id);
     return moto(venta.motovehiculo);
@@ -245,7 +242,6 @@ public class ApiService {
   private void crearFichaVenta(Motovehiculo moto) {
     PropietarioMoto vendedor = propietarioActual(moto.id);
     if (vendedor == null) throw new BusinessException(409, "La moto debe tener un propietario actual para ingresar a Ventas");
-    if (db.count("select count(f) from VentaFicha f where f.motovehiculo.id=:moto and f.deletedAt is null", Map.of("moto", moto.id)) > 0) throw new BusinessException(409, "La moto ya tiene una ficha de venta");
     VentaFicha ficha = new VentaFicha(); ficha.numero = "V-" + db.nextVal("ficha_venta_numero_seq"); ficha.motovehiculo = moto; ficha.vendedor = vendedor.cliente;
     db.persist(ficha);
     for (VentaChecklistPlantilla plantilla : db.all("select e from VentaChecklistPlantilla e where e.deletedAt is null and e.activo=true order by e.orden, e.etiqueta", VentaChecklistPlantilla.class, Map.of())) {
@@ -301,12 +297,17 @@ public class ApiService {
     String where = " where e.deletedAt is null";
     if (q != null && !q.isBlank()) { where += " and (lower(e.numero) like :q or lower(e.motovehiculo.patente) like :q or lower(coalesce(e.comprador.nombre,'')) like :q)"; ps.put("q", "%" + q.trim().toLowerCase() + "%"); }
     if (motoId != null) { where += " and e.motovehiculo.id=:moto"; ps.put("moto", motoId); }
-    if (estado != null && !estado.isBlank()) { where += " and e.motovehiculo.estadoOperativo=:estado"; ps.put("estado", MotoState.of(estado)); }
+    if (estado != null && !estado.isBlank()) {
+      if ("Cancelada".equals(estado)) where += " and e.canceladaAt is not null";
+      else if ("Vendida".equals(estado)) where += " and e.finalizadaAt is not null";
+      else { where += " and e.canceladaAt is null and e.finalizadaAt is null and e.motovehiculo.estadoOperativo=:estado"; ps.put("estado", MotoState.of(estado)); }
+    }
     return page("from VentaFicha e join e.motovehiculo", where, "from VentaFicha e", ps, page, size, sortable(sort, Set.of("numero", "createdAt", "updatedAt"), "createdAt"), dir, x -> ventaFicha((VentaFicha) x));
   }
-  public VentaFichaResponse ventaFicha(UUID id) { return ventaFicha(db.get(VentaFicha.class, id)); }
+  public VentaFichaResponse ventaFicha(UUID id) { return ventaFicha(db.getForUpdate(VentaFicha.class, id)); }
   public VentaFichaResponse ventaFichaPorMoto(UUID motoId) {
-    VentaFicha ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null", VentaFicha.class, Map.of("moto", motoId));
+    VentaFicha ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null and e.canceladaAt is null and e.finalizadaAt is null order by e.createdAt desc", VentaFicha.class, Map.of("moto", motoId));
+    if (ficha == null) ficha = db.one("select e from VentaFicha e where e.motovehiculo.id=:moto and e.deletedAt is null order by e.createdAt desc", VentaFicha.class, Map.of("moto", motoId));
     if (ficha == null) throw new NotFoundException("Ficha de venta inexistente");
     return ventaFicha(ficha);
   }
@@ -439,7 +440,7 @@ public class ApiService {
     List<VentaFichaItemResponse> items = ficha.items.stream().sorted(Comparator.comparingInt(i -> i.orden)).map(i -> new VentaFichaItemResponse(i.id, i.etiqueta, i.orden, i.obligatorio, i.estado.label(), i.realizadoAt, i.realizadoPor == null ? null : i.realizadoPor.nombre)).toList();
     TransferenciaMoto transferencia = ficha.transferencia;
     VentaTransferenciaResponse transferenciaDto = transferencia == null ? null : new VentaTransferenciaResponse(transferencia.id, transferencia.fechaTransferencia, transferencia.citaFecha, transferencia.citaHora, transferencia.citaLugar, transferencia.asistenciaAt, transferencia.asistenciaPor == null ? null : transferencia.asistenciaPor.nombre, transferencia.canceladaAt, transferencia.canceladaPor == null ? null : transferencia.canceladaPor.nombre, transferencia.finalizadaAt, transferencia.finalizadaPor == null ? null : transferencia.finalizadaPor.nombre, transferencia.createdAt);
-    return new VentaFichaResponse(ficha.id, ficha.numero, ficha.motovehiculo.id, ficha.motovehiculo.patente, ficha.motovehiculo.marca.nombre + " " + ficha.motovehiculo.modelo, ficha.vendedor.id, ficha.vendedor.nombre, ficha.comprador == null ? null : ficha.comprador.id, ficha.comprador == null ? null : ficha.comprador.nombre, ficha.canceladaAt != null ? "Cancelada" : estadoMoto(ficha.motovehiculo), obligatoriosCompletos(ficha), ficha.finalizadaAt, ficha.finalizadaPor == null ? null : ficha.finalizadaPor.nombre, ficha.canceladaAt, ficha.canceladaPor == null ? null : ficha.canceladaPor.nombre, ficha.canceladaMotivo, items, transferenciaDto, ficha.createdAt, ficha.updatedAt);
+    return new VentaFichaResponse(ficha.id, ficha.numero, ficha.motovehiculo.id, ficha.motovehiculo.patente, ficha.motovehiculo.marca.nombre + " " + ficha.motovehiculo.modelo, ficha.vendedor.id, ficha.vendedor.nombre, ficha.comprador == null ? null : ficha.comprador.id, ficha.comprador == null ? null : ficha.comprador.nombre, ficha.canceladaAt != null ? "Cancelada" : ficha.finalizadaAt != null ? "Vendida" : estadoMoto(ficha.motovehiculo), obligatoriosCompletos(ficha), ficha.finalizadaAt, ficha.finalizadaPor == null ? null : ficha.finalizadaPor.nombre, ficha.canceladaAt, ficha.canceladaPor == null ? null : ficha.canceladaPor.nombre, ficha.canceladaMotivo, items, transferenciaDto, ficha.createdAt, ficha.updatedAt);
   }
 
   // ---------- Service ----------
@@ -525,8 +526,8 @@ PropietarioMoto o = propietarioActual(m.id);
     audit("Fichas", "CREAR", e.numero);
     return ficha(e);
   }
-  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.get(Ficha.class, id); assertEditable(e); copy(r, e); requireAtLeastOneTrabajo(e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.PENDIENTE) e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
-  public void deleteFicha(UUID id) { Ficha e = db.get(Ficha.class, id); if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha finalizada"); assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
+  public FichaResponse updateFicha(UUID id, FichaRequest r) { Ficha e = db.getForUpdate(Ficha.class, id); assertEditable(e); if (!e.cliente.id.equals(r.clienteId()) || !e.motovehiculo.id.equals(r.motoId())) throw new BusinessException(409, "El cliente y la moto de una ficha existente no pueden cambiarse"); copy(r, e); requireAtLeastOneTrabajo(e); recalcFichaPayment(e); requireTallerIngresada(e.motovehiculo); assertNoOpenFicha(e.motovehiculo.id, e.id); if (e.estado == FichaState.PENDIENTE) e.motovehiculo.estadoOperativo = MotoState.PENDIENTE; audit("Fichas", "EDITAR", e.numero); return ficha(e); }
+  public void deleteFicha(UUID id) { Ficha e = db.getForUpdate(Ficha.class, id); if (e.estado == FichaState.TERMINADA || e.estado == FichaState.ENTREGADA) throw new BusinessException(409, "No puede eliminarse una ficha finalizada"); assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); syncMotoAfterFichaCancellation(e); deleted(e); audit("Fichas", "ELIMINAR", e.numero); }
   public FichaResponse fichaState(UUID id, StateRequest r) {
     Ficha e = db.get(Ficha.class, id); FichaState next = FichaState.of(r.estado());
     if (next == FichaState.CANCELADA && e.estado != FichaState.TERMINADA && e.estado != FichaState.ENTREGADA && e.estado != FichaState.CANCELADA) { assertSinCobros(e.pagos, "La ficha tiene pagos registrados"); e.estado = next; syncMotoAfterFichaCancellation(e); }
@@ -575,6 +576,10 @@ PropietarioMoto o = propietarioActual(m.id);
     e.observaciones = blank(r.observaciones());
     e.descuentoGlobal = money(r.descuentoGlobal());
     e.iva = r.iva();
+    if (e.fechaIngreso.isAfter(today())) throw new BusinessException(422, "La fecha de ingreso no puede ser futura");
+    if (e.fechaEntregaEstimada != null && e.fechaEntregaEstimada.isBefore(e.fechaIngreso)) throw new BusinessException(422, "La entrega estimada no puede ser anterior al ingreso");
+    if (e.vencimiento != null && e.vencimiento.isBefore(e.fechaIngreso)) throw new BusinessException(422, "El vencimiento no puede ser anterior al ingreso");
+    if (e.kilometrajeIngreso != null && e.motovehiculo.kilometraje != null && e.kilometrajeIngreso > e.motovehiculo.kilometraje) throw new BusinessException(422, "El kilometraje de ingreso no puede superar el kilometraje actual");
     replaceTrabajos(e, r.trabajos());
     recalc(e);
   }
@@ -746,6 +751,7 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   public RepuestoResponse updateRepuesto(UUID id, RepuestoRequest r) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
+    assertSinCobros(e.pagos, "El pedido tiene pagos registrados y no puede reasignarse");
     if (r.items() == null || r.items().isEmpty()) throw new BusinessException(400, "El pedido debe tener al menos un ítem");
     applyRepuestoLinks(e, db.get(Motovehiculo.class, r.motoVehiculoId()), db.get(Cliente.class, r.clienteId()), r.fichaId());
     e.fecha = r.fecha() == null ? today() : r.fecha();
@@ -895,7 +901,7 @@ PropietarioMoto o = propietarioActual(m.id);
 
   // ---------- Revisión final de entrega ----------
   public RevisionResponse revision(UUID fichaId) {
-    Ficha f = db.get(Ficha.class, fichaId);
+    Ficha f = db.getForUpdate(Ficha.class, fichaId);
     if (f.estado != FichaState.REVISION) throw new BusinessException(409, "La ficha debe estar en revisión");
     Revision r = findOrRestoreRevision(f);
     return revisionDto(r);
@@ -930,7 +936,7 @@ PropietarioMoto o = propietarioActual(m.id);
     return revisionDto(rev);
   }
   private Revision revisionEntity(UUID fichaId) {
-    Ficha f = db.get(Ficha.class, fichaId);
+    Ficha f = db.getForUpdate(Ficha.class, fichaId);
     if (f.estado != FichaState.REVISION) throw new BusinessException(409, "La ficha debe estar en revisión");
     return findOrRestoreRevision(f);
   }
@@ -982,7 +988,7 @@ PropietarioMoto o = propietarioActual(m.id);
   public List<NamedResponse> categorias(boolean includeDeleted) { return db.all("select e from Categoria e where 1=1" + active(includeDeleted) + " order by e.nombre", Categoria.class, Map.of()).stream().map(c -> new NamedResponse(c.id, c.nombre, c.activo, c.createdAt, c.updatedAt)).toList(); }
   public NamedResponse createCategoria(NameRequest r) { Categoria e = new Categoria(); e.nombre = r.nombre().trim(); db.persist(e); audit("CONFIG", "CATEGORÍAS", e.nombre); return new NamedResponse(e.id, e.nombre, e.activo, e.createdAt, e.updatedAt); }
   public NamedResponse updateCategoria(UUID id, NameRequest r) { Categoria e = db.get(Categoria.class, id); e.nombre = r.nombre().trim(); if (r.activo() != null) e.activo = r.activo(); audit("CONFIG", "CATEGORÍAS", e.nombre); return new NamedResponse(e.id, e.nombre, e.activo, e.createdAt, e.updatedAt); }
-  public void deleteCategoria(UUID id) { Categoria e = db.get(Categoria.class, id); if (db.count("select count(r) from ControlRevision c join c.categorias cat where cat.id=:id", Map.of("id", id)) > 0) throw new BusinessException(409, "La categoría está en uso por controles"); deleted(e); audit("CONFIG", "CATEGORÍAS", "eliminar"); }
+  public void deleteCategoria(UUID id) { Categoria e = db.get(Categoria.class, id); if (db.count("select count(c) from ControlRevision c join c.categorias cat where cat.id=:id", Map.of("id", id)) > 0) throw new BusinessException(409, "La categoría está en uso por controles"); deleted(e); audit("CONFIG", "CATEGORÍAS", "eliminar"); }
   public List<UserResponse> users(boolean includeDeleted) { return db.all("select e from AppUser e where 1=1" + active(includeDeleted) + " order by e.nombre", AppUser.class, Map.of()).stream().map(this::user).toList(); }
   public UserResponse user(AppUser e) { return new UserResponse(e.id, e.nombre, e.email, e.rol, e.activo, e.createdAt, e.updatedAt); }
   public UserResponse createUser(UserRequest r) {

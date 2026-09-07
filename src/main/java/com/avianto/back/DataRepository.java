@@ -9,6 +9,7 @@ public class DataRepository {
   @PersistenceContext private EntityManager em;
   public <T> T get(Class<T> type, UUID id) { T value=em.find(type,id); if(value==null) throw new NotFoundException(type.getSimpleName()+" inexistente"); return value; }
   public <T> T getForUpdate(Class<T> type, UUID id) { T value=em.find(type,id,LockModeType.PESSIMISTIC_WRITE); if(value==null) throw new NotFoundException(type.getSimpleName()+" inexistente"); return value; }
+  public <T> T oneForUpdate(String jpql, Class<T> type, Map<String,?> params) { TypedQuery<T> query=em.createQuery(jpql,type); params.forEach(query::setParameter); List<T> results=query.setMaxResults(1).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList(); return results.isEmpty() ? null : results.get(0); }
   public <T> T save(T entity) { return em.merge(entity); }
   public void persist(Object entity) { em.persist(entity); }
   public void flush() { em.flush(); }

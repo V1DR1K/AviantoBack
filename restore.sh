@@ -7,4 +7,11 @@ if [[ $# -ne 1 || ! -f "$1" ]]; then
 fi
 
 ROOT=/home/Avianto/AviantoBack
-gunzip -c "$1" | docker compose --env-file "$ROOT/.env" -f "$ROOT/docker-compose.yml" exec -T postgres psql -U avianto -d avianto
+set -a
+source "$ROOT/.env"
+set +a
+if [[ "${AVIANTO_ALLOW_RESTORE:-}" != "1" ]]; then
+  printf 'Restauración bloqueada. Confirmá explícitamente con AVIANTO_ALLOW_RESTORE=1.\n' >&2
+  exit 77
+fi
+gunzip -c "$1" | docker compose --env-file "$ROOT/.env" -f "$ROOT/docker-compose.yml" exec -T postgres psql --set=ON_ERROR_STOP=1 --single-transaction -U "$POSTGRES_USER" -d "$POSTGRES_DB"
