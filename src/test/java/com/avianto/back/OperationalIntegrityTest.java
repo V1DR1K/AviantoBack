@@ -371,6 +371,55 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void fichaWithHigherMileageUpdatesTheMotorcycleCurrentMileage() {
+    UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
+    Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId); moto.kilometraje = 1000;
+    PropietarioMoto owner = owner(moto, cliente);
+    when(db.get(Cliente.class, clienteId)).thenReturn(cliente);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+    when(db.count(contains("from Ficha"), anyMap())).thenReturn(0L);
+
+    ApiDtos.FichaResponse response = api.createFicha(fichaConKilometraje(clienteId, motoId, 1500));
+
+    assertEquals(1500, response.kilometrajeIngreso());
+    assertEquals(1500, moto.kilometraje);
+  }
+
+  @Test
+  void fichaWithEqualMileageKeepsTheMotorcycleCurrentMileage() {
+    UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
+    Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId); moto.kilometraje = 1000;
+    PropietarioMoto owner = owner(moto, cliente);
+    when(db.get(Cliente.class, clienteId)).thenReturn(cliente);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+    when(db.count(contains("from Ficha"), anyMap())).thenReturn(0L);
+
+    ApiDtos.FichaResponse response = api.createFicha(fichaConKilometraje(clienteId, motoId, 1000));
+
+    assertEquals(1000, response.kilometrajeIngreso());
+    assertEquals(1000, moto.kilometraje);
+  }
+
+  @Test
+  void fichaWithLowerMileageIsRejected() {
+    UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
+    Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId); moto.kilometraje = 1000;
+    PropietarioMoto owner = owner(moto, cliente);
+    when(db.get(Cliente.class, clienteId)).thenReturn(cliente);
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.one(contains("from PropietarioMoto"), eq(PropietarioMoto.class), anyMap())).thenReturn(owner);
+
+    BusinessException error = assertThrows(BusinessException.class, () -> api.createFicha(fichaConKilometraje(clienteId, motoId, 999)));
+
+    assertEquals(422, error.status);
+    assertEquals("El kilometraje de ingreso no puede ser menor al kilometraje actual", error.getMessage());
+    assertEquals(1000, moto.kilometraje);
+    verify(db, never()).persist(isA(Ficha.class));
+  }
+
+  @Test
   void fichaSummaryOnlyReturnsLinkedRepuestoOrders() {
     UUID fichaId = UUID.randomUUID();
     Ficha ficha = new Ficha(); ficha.id = fichaId;
@@ -503,6 +552,10 @@ class OperationalIntegrityTest {
 
   private static ApiDtos.FichaRequest ficha(UUID clienteId, UUID motoId) {
     return new ApiDtos.FichaRequest(clienteId, motoId, null, null, null, null, null, BigDecimal.ZERO, false, List.of());
+  }
+  private static ApiDtos.FichaRequest fichaConKilometraje(UUID clienteId, UUID motoId, Integer kilometraje) {
+    return new ApiDtos.FichaRequest(clienteId, motoId, null, null, kilometraje, null, null, BigDecimal.ZERO, false,
+      List.of(new ApiDtos.FichaTrabajoRequest("Cambio de aceite", BigDecimal.ZERO, BigDecimal.ZERO, null, null)));
   }
   private static Ficha fichaConTrabajos(TrabajoState... estados) {
     Ficha ficha = new Ficha(); ficha.id = UUID.randomUUID(); ficha.numero = "F-1"; ficha.cliente = cliente(UUID.randomUUID()); ficha.motovehiculo = moto(UUID.randomUUID()); ficha.descuentoGlobal = BigDecimal.ZERO;

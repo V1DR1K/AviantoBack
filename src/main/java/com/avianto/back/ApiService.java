@@ -589,7 +589,8 @@ PropietarioMoto o = propietarioActual(m.id);
     if (e.fechaIngreso.isAfter(today())) throw new BusinessException(422, "La fecha de ingreso no puede ser futura");
     if (e.fechaEntregaEstimada != null && e.fechaEntregaEstimada.isBefore(e.fechaIngreso)) throw new BusinessException(422, "La entrega estimada no puede ser anterior al ingreso");
     if (e.vencimiento != null && e.vencimiento.isBefore(e.fechaIngreso)) throw new BusinessException(422, "El vencimiento no puede ser anterior al ingreso");
-    if (e.kilometrajeIngreso != null && e.motovehiculo.kilometraje != null && e.kilometrajeIngreso > e.motovehiculo.kilometraje) throw new BusinessException(422, "El kilometraje de ingreso no puede superar el kilometraje actual");
+    if (e.kilometrajeIngreso != null && e.motovehiculo.kilometraje != null && e.kilometrajeIngreso < e.motovehiculo.kilometraje) throw new BusinessException(422, "El kilometraje de ingreso no puede ser menor al kilometraje actual");
+    if (e.kilometrajeIngreso != null && (e.motovehiculo.kilometraje == null || e.kilometrajeIngreso > e.motovehiculo.kilometraje)) e.motovehiculo.kilometraje = e.kilometrajeIngreso;
     replaceTrabajos(e, r.trabajos());
     recalc(e);
   }
