@@ -472,10 +472,15 @@ class OperationalIntegrityTest {
     assertEquals("%PDF", new String(response.getBody(), 0, 4, java.nio.charset.StandardCharsets.ISO_8859_1));
     com.lowagie.text.pdf.PdfReader pdf = new com.lowagie.text.pdf.PdfReader(response.getBody());
     String content = new com.lowagie.text.pdf.parser.PdfTextExtractor(pdf).getTextFromPage(1);
-    pdf.close();
     assertTrue(content.contains("R-1"));
     assertTrue(content.contains("Filtro"));
     assertTrue(content.contains("TOTAL PRESUPUESTO"));
+    assertTrue(content.contains("Mecánica integral de motos"));
+    var resources = pdf.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES);
+    var xObjects = resources.getAsDict(com.lowagie.text.pdf.PdfName.XOBJECT);
+    assertTrue(xObjects != null && xObjects.size() >= 2, "PDF includes both the logo and the watermark artwork");
+    assertEquals(1, pdf.getNumberOfPages());
+    pdf.close();
   }
 
   @Test
