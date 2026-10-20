@@ -100,14 +100,18 @@ final class FichaPdfRenderer {
         .reduce(BigDecimal.ZERO, BigDecimal::add);
     BigDecimal despuesDescuento = subtotalTrabajos.subtract(ficha.descuentoGlobal()).max(BigDecimal.ZERO);
     BigDecimal iva = ficha.iva() ? ficha.total().subtract(despuesDescuento) : BigDecimal.ZERO;
-    PdfPTable totals = createTotalsTable();
-    addTotalRow(totals, "Subtotal trabajos", currency(subtotalTrabajos), false);
-    if (ficha.descuentoGlobal().signum() > 0) {
-      addTotalRow(totals, "Descuento global", currency(ficha.descuentoGlobal()), false);
+    if (ficha.descuentoGlobal().signum() > 0 || ficha.iva()) {
+      PdfPTable adjustments = createTotalsTable();
+      if (ficha.descuentoGlobal().signum() > 0) {
+        addTotalRow(adjustments, "Descuento global", currency(ficha.descuentoGlobal()), false);
+      }
+      if (ficha.iva()) addTotalRow(adjustments, "IVA 21%", currency(iva), false);
+      document.add(adjustments);
     }
-    if (ficha.iva()) addTotalRow(totals, "IVA 21%", currency(iva), false);
-    addTotalRow(totals, "Total ficha", currency(ficha.total()), true);
-    document.add(totals);
+    PdfPTable workTotals = createPairedTotalsTable();
+    addPairedTotalRow(workTotals,
+        "Subtotal trabajos", currency(subtotalTrabajos), "Total ficha", currency(ficha.total()));
+    document.add(workTotals);
 
     addSectionHeading(document, "Pedidos de repuestos y accesorios vinculados");
     BigDecimal totalRepuestos = BigDecimal.ZERO;
@@ -146,9 +150,9 @@ final class FichaPdfRenderer {
       if (!"Cancelado".equals(pedido.estado())) totalRepuestos = totalRepuestos.add(pedido.total());
     }
 
-    PdfPTable finalTotal = createTotalsTable();
-    addTotalRow(finalTotal, "Total repuestos vinculados", currency(totalRepuestos), false);
-    addTotalRow(finalTotal, "TOTAL PRESUPUESTO", currency(ficha.total().add(totalRepuestos)), true);
+    PdfPTable finalTotal = createPairedTotalsTable();
+    addPairedTotalRow(finalTotal, "Total repuestos vinculados", currency(totalRepuestos),
+        "TOTAL PRESUPUESTO", currency(ficha.total().add(totalRepuestos)));
     finalTotal.setSpacingBefore(8);
     document.add(finalTotal);
 
@@ -242,6 +246,16 @@ final class FichaPdfRenderer {
     return table;
   }
 
+  private static PdfPTable createPairedTotalsTable() throws DocumentException {
+    PdfPTable table = new PdfPTable(new float[] {2.1f, 1.3f, 2.1f, 1.3f});
+    table.setWidthPercentage(100);
+    table.setHorizontalAlignment(Element.ALIGN_LEFT);
+    table.setSpacingBefore(3);
+    table.setSpacingAfter(4);
+    table.setKeepTogether(true);
+    return table;
+  }
+
   private static void addTotalRow(PdfPTable table, String label, String value, boolean emphasized) {
     Color background = emphasized ? AVIANTO_BLUE : SURFACE;
     Font font = emphasized ? new Font(Font.HELVETICA, 9, Font.BOLD, WHITE) : BODY;
@@ -255,6 +269,29 @@ final class FichaPdfRenderer {
     valueCell.setHorizontalAlignment(Element.ALIGN_RIGHT);
     table.addCell(labelCell);
     table.addCell(valueCell);
+  }
+
+  private static void addPairedTotalRow(
+      PdfPTable table, String leftLabel, String leftValue, String rightLabel, String rightValue) {
+    addPairedTotalCell(table, leftLabel, SURFACE, BODY, GRID, false);
+    addPairedTotalCell(table, leftValue, SURFACE, BODY, GRID, true);
+    Font emphasized = new Font(Font.HELVETICA, 9, Font.BOLD, WHITE);
+    addPairedTotalCell(table, rightLabel, AVIANTO_BLUE, emphasized, AVIANTO_BLUE, false);
+    addPairedTotalCell(table, rightValue, AVIANTO_BLUE, emphasized, AVIANTO_BLUE, true);
+  }
+
+  private static void addPairedTotalCell(
+      PdfPTable table, String value, Color background, Font font, Color border, boolean alignRight) {
+    PdfPCell cell = new PdfPCell(new Phrase(value, font));
+    cell.setBackgroundColor(background);
+    cell.setBorderColor(border);
+    cell.setPadding(7);
+    cell.setVerticalAlignment(Element.ALIGN_MIDDLE);
+    if (alignRight) {
+      cell.setHorizontalAlignment(Element.ALIGN_RIGHT);
+      cell.setNoWrap(true);
+    }
+    table.addCell(cell);
   }
 
   private static void addBodyCell(PdfPTable table, String value, Color background) {

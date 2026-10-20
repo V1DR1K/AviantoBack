@@ -474,6 +474,9 @@ class OperationalIntegrityTest {
     String content = new com.lowagie.text.pdf.parser.PdfTextExtractor(pdf).getTextFromPage(1);
     assertTrue(content.contains("R-1"));
     assertTrue(content.contains("Filtro"));
+    assertTrue(content.contains("Subtotal trabajos"));
+    assertTrue(content.contains("Total ficha"));
+    assertTrue(content.contains("Total repuestos vinculados"));
     assertTrue(content.contains("TOTAL PRESUPUESTO"));
     assertTrue(content.contains("Mecánica integral de motos"));
     var resources = pdf.getPageN(1).getAsDict(com.lowagie.text.pdf.PdfName.RESOURCES);
