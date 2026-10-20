@@ -53,7 +53,8 @@ final class FichaPdfRenderer {
   private static final Font FIELD_LABEL = new Font(Font.HELVETICA, 7, Font.NORMAL, MUTED);
   private static final Font FIELD_VALUE = new Font(Font.HELVETICA, 9, Font.BOLD, AVIANTO_BLUE);
   private static final Font TABLE_HEADER = new Font(Font.HELVETICA, 8, Font.BOLD, WHITE);
-  private static final Font FOOTER = new Font(Font.HELVETICA, 7, Font.NORMAL, MUTED);
+  private static final Font FOOTER_BRAND = new Font(Font.HELVETICA, 12, Font.BOLD, AVIANTO_BLUE);
+  private static final Font PAGE_NUMBER = new Font(Font.HELVETICA, 8, Font.NORMAL, MUTED);
 
   private FichaPdfRenderer() {}
 
@@ -234,8 +235,8 @@ final class FichaPdfRenderer {
 
   private static PdfPTable createTotalsTable() throws DocumentException {
     PdfPTable table = new PdfPTable(new float[] {3, 1});
-    table.setWidthPercentage(52);
-    table.setHorizontalAlignment(Element.ALIGN_RIGHT);
+    table.setWidthPercentage(100);
+    table.setHorizontalAlignment(Element.ALIGN_LEFT);
     table.setSpacingBefore(3);
     table.setSpacingAfter(4);
     return table;
@@ -378,10 +379,11 @@ final class FichaPdfRenderer {
       canvas.moveTo(document.left(), 31);
       canvas.lineTo(document.left() + 32, 31);
       canvas.stroke();
-      ColumnText.showTextAligned(canvas, Element.ALIGN_LEFT,
-          new Phrase("AVIANTO · Mecánica integral de motos", FOOTER), document.left(), 19, 0);
+      ColumnText.showTextAligned(canvas, Element.ALIGN_CENTER,
+          new Phrase("AVIANTO · Mecánica integral de motos", FOOTER_BRAND),
+          (document.left() + document.right()) / 2, 15, 0);
       ColumnText.showTextAligned(canvas, Element.ALIGN_RIGHT,
-          new Phrase("Página " + writer.getPageNumber(), FOOTER), document.right(), 19, 0);
+          new Phrase("Página " + writer.getPageNumber(), PAGE_NUMBER), document.right(), 18, 0);
       canvas.restoreState();
     }
   }
