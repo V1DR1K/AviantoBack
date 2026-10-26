@@ -50,7 +50,7 @@ Con una moto que tenga `serviceObservaciones`, enviar `PATCH /api/motovehiculos/
 
 La omisión ahora conserva la nota; `null` o vacío explícitos siguen permitiendo borrarla, incluido el formulario actual de configuración. Verificado con las regresiones de `OperationalIntegrityTest`.
 
-### LISTO PARA DESPLIEGUE — P2 — El proxy público servía el frontend en las rutas de salud y documentación API
+### PENDIENTE DE ACTIVACIÓN — P2 — El proxy público servía el frontend en las rutas de salud y documentación API
 
 **Reproducción observada**
 
@@ -71,7 +71,7 @@ Los monitores que comprueban las rutas públicas de readiness/liveness pueden to
 
 **Estado de la solución**
 
-El bloque de Caddy está versionado en `AviantoBack/ops/avianto.caddy` y listo para aplicar. Falta actualizar el Caddyfile del VPS, validarlo y confirmar las rutas públicas después del despliegue; esos resultados se agregarán aquí.
+El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`, se actualizó solo el bloque de Avianto y pasó `caddy validate`. La API `0cefc5f` está desplegada y saludable; PostgreSQL sigue saludable y no necesitó migraciones. La recarga fue rechazada porque el bloque global del Caddyfile tiene `admin off`. El Caddyfile cargado en memoria conserva la configuración anterior: las comprobaciones públicas actuales de readiness y OpenAPI devuelven `200 text/html`. Hace falta reiniciar el contenedor compartido `edge-caddy` para activar la nueva regla; se pidió autorización porque la interrupción breve también afectaría los otros dominios del VPS.
 
 ### RESUELTO — P3 — Las colecciones de propietarios y services aceptaban una moto inexistente
 
@@ -102,6 +102,7 @@ Una colección anidada bajo una moto inexistente debe responder `404`, igual que
 - Se ejercitó cada mapping al menos una vez y cada operación de negocio no GET tuvo un recorrido válido con Administración. Esto verifica contratos y flujos principales; no equivale a combinaciones exhaustivas de todos los valores, pruebas de carga, concurrencia ni pruebas de recuperación ante fallos de infraestructura.
 - Las cinco correcciones se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
 - Verificación final local tras las correcciones: backend `mvn test` — 86 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
+- Despliegue parcial comprobado: `avianto-api` está `healthy` en `0cefc5f`; el esquema está en la versión 29 y las 29 migraciones validan. Caddy está pendiente de reinicio autorizado; las rutas públicas `/actuator/health/readiness` y `/v3/api-docs` siguen siendo servidas como HTML hasta activarlo.
 - Los registros de auditoría permanecen en el ambiente de pruebas según lo autorizado; sus nombres usan el prefijo `QA-AUDIT-20261026-A`.
 
 <details>
