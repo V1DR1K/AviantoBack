@@ -1,0 +1,14 @@
+# Source of truth for the Avianto host block in /opt/infra/edge/Caddyfile.
+avianto.neticar.com.ar {
+	encode zstd gzip
+	import security_headers
+
+	@backend path /api/* /actuator /actuator/* /swagger-ui.html /swagger-ui/* /v3/api-docs /v3/api-docs/*
+	handle @backend {
+		reverse_proxy avianto-api:8081
+	}
+
+	handle {
+		reverse_proxy avianto-web:3000
+	}
+}

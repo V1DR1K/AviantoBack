@@ -1,5 +1,6 @@
 package com.avianto.back;
 
+import com.fasterxml.jackson.annotation.JsonSetter;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.*;
 import java.math.BigDecimal;
@@ -21,7 +22,21 @@ public final class ApiDtos {
   public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record IntakeRequest(@NotBlank String seccion) {}
   public record CircuitChangeRequest(@NotBlank String seccion, @NotBlank @Size(max=500) String motivo) {}
-  public record MotoConfigServiceRequest(@PositiveOrZero Integer kmServicePeriodo, @PositiveOrZero Integer mesesServicePeriodo, String serviceObservaciones) {}
+  public static final class MotoConfigServiceRequest {
+    @PositiveOrZero private Integer kmServicePeriodo;
+    @PositiveOrZero private Integer mesesServicePeriodo;
+    private String serviceObservaciones;
+    private boolean serviceObservacionesPresent;
+
+    public MotoConfigServiceRequest() {}
+    @JsonSetter("kmServicePeriodo") public void setKmServicePeriodo(Integer value) { kmServicePeriodo = value; }
+    @JsonSetter("mesesServicePeriodo") public void setMesesServicePeriodo(Integer value) { mesesServicePeriodo = value; }
+    @JsonSetter("serviceObservaciones") public void setServiceObservaciones(String value) { serviceObservaciones = value; serviceObservacionesPresent = true; }
+    public Integer kmServicePeriodo() { return kmServicePeriodo; }
+    public Integer mesesServicePeriodo() { return mesesServicePeriodo; }
+    public String serviceObservaciones() { return serviceObservaciones; }
+    public boolean serviceObservacionesPresent() { return serviceObservacionesPresent; }
+  }
   public record TransferUpdateRequest(@NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
   public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo) {}
   public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt) {}
@@ -63,7 +78,23 @@ public final class ApiDtos {
   public record RepuestoResponse(UUID id, String numero, UUID motoId, String patente, UUID clienteId, String cliente, UUID fichaId, LocalDate fecha, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, String proveedor, String observaciones, List<RepuestoItemResponse> items, Instant creadoEn) {}
   public record ControlRequest(@NotBlank @Size(max=200) String nombre, String descripcion, Boolean obligatorio, Integer orden, Boolean activo, List<UUID> categoriaIds) {}
   public record ControlResponse(UUID id, String nombre, String descripcion, boolean obligatorio, int orden, boolean activo, List<NamedResponse> categorias, Instant createdAt, Instant updatedAt) {}
-  public record RevisionControlRequest(String estado, String observacion, String correccionNecesaria) {}
+  public static final class RevisionControlRequest {
+    private String estado;
+    private String observacion;
+    private String correccionNecesaria;
+    private boolean observacionPresent;
+    private boolean correccionNecesariaPresent;
+
+    public RevisionControlRequest() {}
+    @JsonSetter("estado") public void setEstado(String value) { estado = value; }
+    @JsonSetter("observacion") public void setObservacion(String value) { observacion = value; observacionPresent = true; }
+    @JsonSetter("correccionNecesaria") public void setCorreccionNecesaria(String value) { correccionNecesaria = value; correccionNecesariaPresent = true; }
+    public String estado() { return estado; }
+    public String observacion() { return observacion; }
+    public String correccionNecesaria() { return correccionNecesaria; }
+    public boolean observacionPresent() { return observacionPresent; }
+    public boolean correccionNecesariaPresent() { return correccionNecesariaPresent; }
+  }
   public record RevisionControlResponse(UUID id, UUID controlId, String control, String categorias, boolean obligatorio, int orden, String estado, String observacion, String correccionNecesaria, String revisadoPor, Instant revisadoAt) {}
   public record RevisionAprobarRequest(boolean forzada, String observacion, List<UUID> serviceIds) {}
   public record RevisionResponse(UUID id, UUID fichaId, String ficha, String estado, String aprobadoPor, Instant aprobadoAt, boolean forzada, String observacion, List<RevisionControlResponse> controles) {}

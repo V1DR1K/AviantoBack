@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.*;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.*;
@@ -18,6 +19,57 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 class OperationalIntegrityTest {
   private final DataRepository db = mock(DataRepository.class);
   private final ApiService api = new ApiService(db, mock(PasswordEncoder.class));
+
+  @Test
+  void partialMotoConfigPreservesServiceObservationsWhenOmitted() throws Exception {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.serviceObservaciones = "Revisar correa";
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    ApiDtos.MotoConfigServiceRequest request = new ObjectMapper().readValue(
+        "{\"kmServicePeriodo\":6000}", ApiDtos.MotoConfigServiceRequest.class);
+
+    ApiDtos.MotorcycleResponse response = api.updateMotoConfig(motoId, request);
+
+    assertEquals(6000, moto.kmServicePeriodo);
+    assertEquals("Revisar correa", moto.serviceObservaciones);
+    assertEquals("Revisar correa", response.serviceObservaciones());
+  }
+
+  @Test
+  void partialMotoConfigClearsServiceObservationsWhenNullIsExplicit() throws Exception {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.serviceObservaciones = "Revisar correa";
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    ApiDtos.MotoConfigServiceRequest request = new ObjectMapper().readValue(
+        "{\"serviceObservaciones\":null}", ApiDtos.MotoConfigServiceRequest.class);
+
+    ApiDtos.MotorcycleResponse response = api.updateMotoConfig(motoId, request);
+
+    assertNull(moto.serviceObservaciones);
+    assertNull(response.serviceObservaciones());
+  }
+
+  @Test
+  void ownersRejectMissingMotorcycleBeforeQueryingHistory() {
+    UUID motoId = UUID.randomUUID();
+    when(db.get(Motovehiculo.class, motoId)).thenThrow(new NotFoundException("Motovehículo inexistente"));
+
+    assertThrows(NotFoundException.class, () -> api.owners(motoId));
+
+    verify(db).get(Motovehiculo.class, motoId);
+    verify(db, never()).all(contains("PropietarioMoto"), eq(PropietarioMoto.class), anyMap());
+  }
+
+  @Test
+  void servicesRejectMissingMotorcycleBeforeQueryingHistory() {
+    UUID motoId = UUID.randomUUID();
+    when(db.get(Motovehiculo.class, motoId)).thenThrow(new NotFoundException("Motovehículo inexistente"));
+
+    assertThrows(NotFoundException.class, () -> api.services(motoId));
+
+    verify(db).get(Motovehiculo.class, motoId);
+    verify(db, never()).all(contains("ServiceMoto"), eq(ServiceMoto.class), anyMap());
+  }
 
   @Test
   void fichaRequiresTheCurrentMotorcycleOwner() {

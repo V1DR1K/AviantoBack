@@ -209,7 +209,8 @@ public class ApiService {
     Motovehiculo e = db.get(Motovehiculo.class, id);
     if (r.kmServicePeriodo() != null) e.kmServicePeriodo = r.kmServicePeriodo();
     if (r.mesesServicePeriodo() != null) e.mesesServicePeriodo = r.mesesServicePeriodo();
-    e.serviceObservaciones = blank(r.serviceObservaciones()); audit("Motovehículos", "CONFIG SERVICE", e.patente); return moto(e);
+    if (r.serviceObservacionesPresent()) e.serviceObservaciones = blank(r.serviceObservaciones());
+    audit("Motovehículos", "CONFIG SERVICE", e.patente); return moto(e);
   }
   private void copy(MotorcycleRequest r, Motovehiculo e) {
     MarcaMoto b = db.get(MarcaMoto.class, r.marcaId());
@@ -260,6 +261,7 @@ public class ApiService {
 
   // ---------- Propietarios (toda la historia; actual = fechaHasta null) ----------
   public List<OwnerResponse> owners(UUID motoId) {
+    db.get(Motovehiculo.class, motoId);
     return db.all("select e from PropietarioMoto e join e.cliente where e.motovehiculo.id=:moto and e.deletedAt is null order by e.fechaDesde desc", PropietarioMoto.class, Map.of("moto", motoId)).stream().map(this::owner).toList();
   }
   private void assignInitialOwner(UUID motoId, UUID clientId) {
@@ -453,6 +455,7 @@ public class ApiService {
 
   // ---------- Service ----------
   public List<ServiceResponse> services(UUID motoId) {
+    db.get(Motovehiculo.class, motoId);
     return db.all("select e from ServiceMoto e join e.motovehiculo left join e.ficha where e.motovehiculo.id=:moto order by e.fecha desc", ServiceMoto.class, Map.of("moto", motoId)).stream().map(this::service).toList();
   }
   public PageResponse<ServiceResponse> serviceHistory(UUID motoId, LocalDate desde, LocalDate hasta, int page, int size, String sort, String dir) {
@@ -954,8 +957,8 @@ PropietarioMoto o = propietarioActual(m.id);
     RevisionControl c = rev.controles.stream().filter(x -> x.id.equals(controlId)).findFirst().orElseThrow(() -> new NotFoundException("El control no existe"));
     String state = blank(r.estado());
     if (state != null) c.estado = RevisionControlState.of(state);
-    c.observacion = blank(r.observacion());
-    c.correccionNecesaria = blank(r.correccionNecesaria());
+    if (r.observacionPresent()) c.observacion = blank(r.observacion());
+    if (r.correccionNecesariaPresent()) c.correccionNecesaria = blank(r.correccionNecesaria());
     if (c.estado != RevisionControlState.PENDIENTE) { c.revisadoPor = actor(); c.revisadoAt = Instant.now(); }
     audit("REVISION", "CONTROL", rev.ficha.numero + " " + c.control.nombre + " -> " + c.estado.label());
     return revisionDto(rev);

@@ -6,6 +6,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import jakarta.validation.ConstraintViolationException;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
+import org.springframework.web.servlet.resource.NoResourceFoundException;
 import java.time.Instant;
 import java.util.*;
 import org.slf4j.Logger;
@@ -16,6 +17,7 @@ class BusinessException extends RuntimeException { final int status; BusinessExc
 @RestControllerAdvice class Errors {
   private static final Logger log=LoggerFactory.getLogger(Errors.class);
   @ExceptionHandler(NotFoundException.class) ResponseEntity<?> notFound(NotFoundException e) { return error(404,e.getMessage()); }
+  @ExceptionHandler(NoResourceFoundException.class) ResponseEntity<?> routeNotFound(NoResourceFoundException e) { return error(404,"Recurso inexistente"); }
   @ExceptionHandler(BusinessException.class) ResponseEntity<?> business(BusinessException e) { return error(e.status,e.getMessage()); }
   @ExceptionHandler(DataIntegrityViolationException.class) ResponseEntity<?> constraint(DataIntegrityViolationException e) { log.error("Violación de integridad de datos", e); return error(409,"La operación viola una restricción de integridad"); }
   @ExceptionHandler(ConstraintViolationException.class) ResponseEntity<?> constraintValidation(ConstraintViolationException e) { return error(400,"Datos inválidos"); }
