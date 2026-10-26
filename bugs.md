@@ -73,21 +73,20 @@ Los monitores que comprueban las rutas públicas de readiness/liveness pueden to
 
 El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`; se actualizó solo el bloque de Avianto, pasó `caddy validate` y se reinició `edge-caddy` con autorización. La API desplegada desde `0cefc5f` y PostgreSQL están saludables; el esquema está en versión 29 y Flyway confirmó que no hacía falta migrar. Readiness y liveness responden `200` con JSON; `/v3/api-docs` devuelve `200` a Administración y `403` a Operario; `/api/v3/api-docs` y una ruta API desconocida devuelven `404` con Administración; `/app` conserva `200` HTML. `/swagger-ui.html` redirige con `302` a `/swagger-ui/index.html`; la ruta final responde `200` a Administración con Bearer y `403` a Operario. La prueba HTTP manual conserva explícitamente la autorización al seguir la redirección.
 
-### PENDIENTE DE DECISIÓN — P2 — Swagger UI no envía el JWT de la sesión Avianto al cargar OpenAPI
+### RESUELTO — P2 — Swagger UI no enviaba el JWT de la sesión Avianto al cargar OpenAPI
 
 **Reproducción**
 
 1. Iniciar sesión como Administración en `/app`; `AviantoFront/lib/auth.ts` guarda la sesión en `sessionStorage` con la clave `avianto.session`.
-2. La API sirve `/swagger-ui/index.html` a Administración y el endpoint `/v3/api-docs/swagger-config` devuelve `200` con un Bearer válido.
-3. `swagger-initializer.js` no configura un `requestInterceptor` que envíe ese Bearer. La petición del navegador a `/v3/api-docs/swagger-config` llega sin autorización y devuelve `403`; OpenAPI continúa protegido correctamente para Operario y usuarios anónimos.
+2. Antes del cambio, `swagger-initializer.js` no configuraba un `requestInterceptor` que enviara ese Bearer. La petición del navegador a `/v3/api-docs/swagger-config` llegaba sin autorización y devolvía `403`; OpenAPI permanecía protegido para Operario y usuarios anónimos.
 
 **Impacto**
 
-Administración puede descargar OpenAPI usando Bearer, pero Swagger UI no puede cargar automáticamente la definición desde una sesión iniciada en Avianto. Exponer `/v3/api-docs` anónimamente permitiría leer el esquema a cualquier visitante.
+Administración podía descargar OpenAPI usando Bearer, pero Swagger UI no cargaba automáticamente la definición desde una sesión iniciada en Avianto.
 
-**Decisión pendiente**
+**Solución aplicada**
 
-Se recomienda conservar OpenAPI restringido a Administración y hacer que Swagger UI adjunte el JWT de la sesión Avianto a sus solicitudes del mismo origen. La alternativa es exponer la documentación públicamente, lo que cambia la política de seguridad; no se aplicará sin indicación.
+El armazón y los recursos estáticos de Swagger UI se sirven sin sesión porque una navegación del navegador no puede leer el JWT guardado en `sessionStorage`. La definición y configuración OpenAPI (`/v3/api-docs/**`) siguen restringidas a Administración. El transformador del inicializador adjunta el Bearer de `avianto.session` solo a solicitudes del mismo origen y renueva el token de acceso próximo a vencer; Operario y usuarios anónimos no reciben el esquema. La seguridad de `/v3/api-docs/**` se comprobó con MockMvc y la transformación con pruebas unitarias. La verificación funcional contra producción se anota al finalizar el despliegue.
 
 ### RESUELTO — P3 — Las colecciones de propietarios y services aceptaban una moto inexistente
 
@@ -117,8 +116,8 @@ Una colección anidada bajo una moto inexistente debe responder `404`, igual que
 
 - Se ejercitó cada mapping al menos una vez y cada operación de negocio no GET tuvo un recorrido válido con Administración. Esto verifica contratos y flujos principales; no equivale a combinaciones exhaustivas de todos los valores, pruebas de carga, concurrencia ni pruebas de recuperación ante fallos de infraestructura.
 - Las cinco correcciones se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
-- Verificación final local tras las correcciones: backend `mvn test` — 86 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
-- Despliegue comprobado: `avianto-api`, `avianto-postgres` y `edge-caddy` están saludables; las sondas públicas devuelven JSON y el proxy conserva la ruta `/app` al frontend. La ruta interactiva de Swagger redirige correctamente, pero su carga automática del esquema queda pendiente de decisión y solución.
+- Verificación local actual: backend `mvn test` — 91 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
+- El despliegue de la integración de sesión JWT con Swagger y su verificación en producción quedan pendientes hasta publicar el commit actual.
 - Los registros de auditoría permanecen en el ambiente de pruebas según lo autorizado; sus nombres usan el prefijo `QA-AUDIT-20261026-A`.
 
 <details>

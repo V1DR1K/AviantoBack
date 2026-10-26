@@ -113,6 +113,22 @@ class ApiControllerSecurityTest {
   }
 
   @Test
+  void swaggerUiShellIsReachableWithoutAuthentication() throws Exception {
+    mvc.perform(get("/swagger-ui/index.html")).andExpect(status().isNotFound());
+  }
+
+  @Test
+  void anonymousUsersCannotReadOpenApiConfiguration() throws Exception {
+    mvc.perform(get("/v3/api-docs/swagger-config")).andExpect(status().isForbidden());
+  }
+
+  @Test
+  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  void administratorCanReachProtectedOpenApiConfiguration() throws Exception {
+    mvc.perform(get("/v3/api-docs/swagger-config")).andExpect(status().isNotFound());
+  }
+
+  @Test
   @WithMockUser(authorities = "ROLE_ADMINISTRACION")
   void serviceConfigPatchBindsOmittedAndExplicitNullSeparately() throws Exception {
     UUID motoId = UUID.randomUUID();
