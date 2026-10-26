@@ -50,7 +50,7 @@ Con una moto que tenga `serviceObservaciones`, enviar `PATCH /api/motovehiculos/
 
 La omisión ahora conserva la nota; `null` o vacío explícitos siguen permitiendo borrarla, incluido el formulario actual de configuración. Verificado con las regresiones de `OperationalIntegrityTest`.
 
-### PENDIENTE DE ACTIVACIÓN — P2 — El proxy público servía el frontend en las rutas de salud y documentación API
+### RESUELTO — P2 — El proxy público servía el frontend en las rutas de salud y documentación API
 
 **Reproducción observada**
 
@@ -69,9 +69,25 @@ Los monitores que comprueban las rutas públicas de readiness/liveness pueden to
 - `AviantoBack/src/main/resources/application.yml` configura Actuator y Springdoc en sus rutas raíz.
 - `AviantoBack/src/main/java/com/avianto/back/SecurityConfig.java` mantiene Swagger/OpenAPI restringido a Administración; `Errors` convierte rutas no registradas en `404`.
 
-**Estado de la solución**
+**Solución aplicada y verificación en producción**
 
-El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`, se actualizó solo el bloque de Avianto y pasó `caddy validate`. La API `0cefc5f` está desplegada y saludable; PostgreSQL sigue saludable y no necesitó migraciones. La recarga fue rechazada porque el bloque global del Caddyfile tiene `admin off`. El Caddyfile cargado en memoria conserva la configuración anterior: las comprobaciones públicas actuales de readiness y OpenAPI devuelven `200 text/html`. Hace falta reiniciar el contenedor compartido `edge-caddy` para activar la nueva regla; se pidió autorización porque la interrupción breve también afectaría los otros dominios del VPS.
+El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`; se actualizó solo el bloque de Avianto, pasó `caddy validate` y se reinició `edge-caddy` con autorización. La API desplegada desde `0cefc5f` y PostgreSQL están saludables; el esquema está en versión 29 y Flyway confirmó que no hacía falta migrar. Readiness y liveness responden `200` con JSON; `/v3/api-docs` devuelve `200` a Administración y `403` a Operario; `/api/v3/api-docs` y una ruta API desconocida devuelven `404` con Administración; `/app` conserva `200` HTML. `/swagger-ui.html` redirige con `302` a `/swagger-ui/index.html`; la ruta final responde `200` a Administración con Bearer y `403` a Operario. La prueba HTTP manual conserva explícitamente la autorización al seguir la redirección.
+
+### PENDIENTE DE DECISIÓN — P2 — Swagger UI no envía el JWT de la sesión Avianto al cargar OpenAPI
+
+**Reproducción**
+
+1. Iniciar sesión como Administración en `/app`; `AviantoFront/lib/auth.ts` guarda la sesión en `sessionStorage` con la clave `avianto.session`.
+2. La API sirve `/swagger-ui/index.html` a Administración y el endpoint `/v3/api-docs/swagger-config` devuelve `200` con un Bearer válido.
+3. `swagger-initializer.js` no configura un `requestInterceptor` que envíe ese Bearer. La petición del navegador a `/v3/api-docs/swagger-config` llega sin autorización y devuelve `403`; OpenAPI continúa protegido correctamente para Operario y usuarios anónimos.
+
+**Impacto**
+
+Administración puede descargar OpenAPI usando Bearer, pero Swagger UI no puede cargar automáticamente la definición desde una sesión iniciada en Avianto. Exponer `/v3/api-docs` anónimamente permitiría leer el esquema a cualquier visitante.
+
+**Decisión pendiente**
+
+Se recomienda conservar OpenAPI restringido a Administración y hacer que Swagger UI adjunte el JWT de la sesión Avianto a sus solicitudes del mismo origen. La alternativa es exponer la documentación públicamente, lo que cambia la política de seguridad; no se aplicará sin indicación.
 
 ### RESUELTO — P3 — Las colecciones de propietarios y services aceptaban una moto inexistente
 
@@ -102,7 +118,7 @@ Una colección anidada bajo una moto inexistente debe responder `404`, igual que
 - Se ejercitó cada mapping al menos una vez y cada operación de negocio no GET tuvo un recorrido válido con Administración. Esto verifica contratos y flujos principales; no equivale a combinaciones exhaustivas de todos los valores, pruebas de carga, concurrencia ni pruebas de recuperación ante fallos de infraestructura.
 - Las cinco correcciones se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
 - Verificación final local tras las correcciones: backend `mvn test` — 86 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
-- Despliegue parcial comprobado: `avianto-api` está `healthy` en `0cefc5f`; el esquema está en la versión 29 y las 29 migraciones validan. Caddy está pendiente de reinicio autorizado; las rutas públicas `/actuator/health/readiness` y `/v3/api-docs` siguen siendo servidas como HTML hasta activarlo.
+- Despliegue comprobado: `avianto-api`, `avianto-postgres` y `edge-caddy` están saludables; las sondas públicas devuelven JSON y el proxy conserva la ruta `/app` al frontend. La ruta interactiva de Swagger redirige correctamente, pero su carga automática del esquema queda pendiente de decisión y solución.
 - Los registros de auditoría permanecen en el ambiente de pruebas según lo autorizado; sus nombres usan el prefijo `QA-AUDIT-20261026-A`.
 
 <details>
