@@ -88,6 +88,12 @@ final class SwaggerSessionIndexTransformer implements SwaggerIndexTransformer {
     int configurationStart = insertionPoint + initializer.length();
     String updated = javascript.substring(0, configurationStart) + "\n" + INTERCEPTOR
         + javascript.substring(configurationStart);
+    updated = updated.replaceFirst(
+        "(?m)^([\\t ]*)url:\\s*\"https://petstore\\.swagger\\.io/v2/swagger\\.json\",?",
+        "$1url: \"/v3/api-docs\",");
+    updated = updated.replaceAll(
+        "(?m)^[\\t ]*\"configUrl\"\\s*:\\s*\"/v3/api-docs/swagger-config\",?[\\t ]*\\r?\\n?",
+        "");
     return new TransformedResource(transformed, updated.getBytes(StandardCharsets.UTF_8));
   }
 }

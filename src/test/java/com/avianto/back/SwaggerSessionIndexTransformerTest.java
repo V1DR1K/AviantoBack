@@ -25,7 +25,10 @@ class SwaggerSessionIndexTransformerTest {
   @Test
   void addsSessionJwtInterceptorOnlyToSwaggerInitializer() throws Exception {
     Resource initializer = resource("https://example.test/swagger-ui/swagger-initializer.js",
-        "window.onload = function() { window.ui = SwaggerUIBundle({url: '/v3/api-docs'}); };");
+        "window.onload = function() { window.ui = SwaggerUIBundle({\n"
+            + "  url: \"https://petstore.swagger.io/v2/swagger.json\",\n"
+            + "  \"configUrl\" : \"/v3/api-docs/swagger-config\",\n"
+            + "}); };");
     when(delegate.transform(request, initializer, chain)).thenReturn(initializer);
 
     Resource transformed = transformer.transform(request, initializer, chain);
@@ -35,6 +38,9 @@ class SwaggerSessionIndexTransformerTest {
     assertTrue(javascript.contains("avianto.session"));
     assertTrue(javascript.contains("ADMINISTRACION"));
     assertTrue(javascript.contains("target.origin !== window.location.origin"));
+    assertTrue(javascript.contains("url: \"/v3/api-docs\""));
+    assertFalse(javascript.contains("petstore.swagger.io"));
+    assertFalse(javascript.contains("configUrl"));
     assertTrue(javascript.indexOf("requestInterceptor") < javascript.indexOf("SwaggerUIBundle({") + 30);
   }
 

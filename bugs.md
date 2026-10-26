@@ -73,7 +73,7 @@ Los monitores que comprueban las rutas públicas de readiness/liveness pueden to
 
 El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`; se actualizó solo el bloque de Avianto, pasó `caddy validate` y se reinició `edge-caddy` con autorización. La API desplegada desde `0cefc5f` y PostgreSQL están saludables; el esquema está en versión 29 y Flyway confirmó que no hacía falta migrar. Readiness y liveness responden `200` con JSON; `/v3/api-docs` devuelve `200` a Administración y `403` a Operario; `/api/v3/api-docs` y una ruta API desconocida devuelven `404` con Administración; `/app` conserva `200` HTML. `/swagger-ui.html` redirige con `302` a `/swagger-ui/index.html`; la ruta final responde `200` a Administración con Bearer y `403` a Operario. La prueba HTTP manual conserva explícitamente la autorización al seguir la redirección.
 
-### RESUELTO — P2 — Swagger UI no enviaba el JWT de la sesión Avianto al cargar OpenAPI
+### EN VERIFICACIÓN — P2 — Swagger UI no enviaba el JWT de la sesión Avianto al cargar OpenAPI
 
 **Reproducción**
 
@@ -86,7 +86,7 @@ Administración podía descargar OpenAPI usando Bearer, pero Swagger UI no carga
 
 **Solución aplicada**
 
-El armazón y los recursos estáticos de Swagger UI se sirven sin sesión porque una navegación del navegador no puede leer el JWT guardado en `sessionStorage`. La definición y configuración OpenAPI (`/v3/api-docs/**`) siguen restringidas a Administración. El transformador del inicializador adjunta el Bearer de `avianto.session` solo a solicitudes del mismo origen y renueva el token de acceso próximo a vencer; Operario y usuarios anónimos no reciben el esquema. La seguridad de `/v3/api-docs/**` se comprobó con MockMvc y la transformación con pruebas unitarias. La verificación funcional contra producción se anota al finalizar el despliegue.
+El armazón y los recursos estáticos de Swagger UI se sirven sin sesión porque una navegación del navegador no puede leer el JWT guardado en `sessionStorage`. La definición OpenAPI (`/v3/api-docs/**`) y su configuración (`/v3/api-docs/swagger-config`) siguen restringidas a Administración. El inicializador carga `/v3/api-docs` directamente para que Swagger aplique el interceptor, adjunta el Bearer de `avianto.session` solo a solicitudes del mismo origen y renueva el token de acceso próximo a vencer. Una primera versión desplegada dejó el indicador de carga porque la configuración remota se solicita antes del interceptor; la corrección actual elimina esa solicitud y está pendiente de verificación funcional en producción. Operario y usuarios anónimos no reciben el esquema. La seguridad de OpenAPI se comprobó con MockMvc y la transformación con pruebas unitarias.
 
 ### RESUELTO — P3 — Las colecciones de propietarios y services aceptaban una moto inexistente
 
@@ -117,7 +117,7 @@ Una colección anidada bajo una moto inexistente debe responder `404`, igual que
 - Se ejercitó cada mapping al menos una vez y cada operación de negocio no GET tuvo un recorrido válido con Administración. Esto verifica contratos y flujos principales; no equivale a combinaciones exhaustivas de todos los valores, pruebas de carga, concurrencia ni pruebas de recuperación ante fallos de infraestructura.
 - Las cinco correcciones se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
 - Verificación local actual: backend `mvn test` — 91 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
-- El despliegue de la integración de sesión JWT con Swagger y su verificación en producción quedan pendientes hasta publicar el commit actual.
+- La primera versión de integración quedó desplegada en `6c06745`; el smoke confirmó estado saludable y las rutas protegidas, pero Swagger UI permaneció cargando. El ajuste de carga directa está pendiente de publicación y verificación funcional.
 - Los registros de auditoría permanecen en el ambiente de pruebas según lo autorizado; sus nombres usan el prefijo `QA-AUDIT-20261026-A`.
 
 <details>
