@@ -19,6 +19,7 @@ services:
     logging: {driver: local, options: {max-size: 10m, max-file: "3"}}
   app:
     build: .
+    init: true
     mem_limit: 768m
     cpus: 1.0
     pids_limit: 256
@@ -30,7 +31,7 @@ services:
     depends_on:
       postgres: {condition: service_healthy}
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://localhost:8081/actuator/health/readiness || exit 1"]
+      test: ["CMD", "wget", "-q", "-T", "3", "-O", "-", "http://localhost:8081/actuator/health/readiness"]
       interval: 20s
       timeout: 5s
       retries: 5
