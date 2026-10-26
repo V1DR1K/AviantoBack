@@ -73,7 +73,7 @@ Los monitores que comprueban las rutas públicas de readiness/liveness pueden to
 
 El Caddyfile de `/opt/infra/edge/Caddyfile` se respaldó en `/opt/infra/edge/Caddyfile.bak.20261026-171302`; se actualizó solo el bloque de Avianto, pasó `caddy validate` y se reinició `edge-caddy` con autorización. La API desplegada desde `0cefc5f` y PostgreSQL están saludables; el esquema está en versión 29 y Flyway confirmó que no hacía falta migrar. Readiness y liveness responden `200` con JSON; `/v3/api-docs` devuelve `200` a Administración y `403` a Operario; `/api/v3/api-docs` y una ruta API desconocida devuelven `404` con Administración; `/app` conserva `200` HTML. `/swagger-ui.html` redirige con `302` a `/swagger-ui/index.html`; la ruta final responde `200` a Administración con Bearer y `403` a Operario. La prueba HTTP manual conserva explícitamente la autorización al seguir la redirección.
 
-### EN VERIFICACIÓN — P2 — Swagger UI no enviaba el JWT de la sesión Avianto al cargar OpenAPI
+### RESUELTO — P2 — Swagger UI no enviaba el JWT de la sesión Avianto al cargar OpenAPI
 
 **Reproducción**
 
@@ -86,7 +86,17 @@ Administración podía descargar OpenAPI usando Bearer, pero Swagger UI no carga
 
 **Solución aplicada**
 
-El armazón y los recursos estáticos de Swagger UI se sirven sin sesión porque una navegación del navegador no puede leer el JWT guardado en `sessionStorage`. La definición OpenAPI (`/v3/api-docs/**`) y su configuración (`/v3/api-docs/swagger-config`) siguen restringidas a Administración. El inicializador carga `/v3/api-docs` directamente para que Swagger aplique el interceptor, adjunta el Bearer de `avianto.session` solo a solicitudes del mismo origen y renueva el token de acceso próximo a vencer. Una primera versión desplegada dejó el indicador de carga porque la configuración remota se solicita antes del interceptor; la corrección actual elimina esa solicitud y está pendiente de verificación funcional en producción. Operario y usuarios anónimos no reciben el esquema. La seguridad de OpenAPI se comprobó con MockMvc y la transformación con pruebas unitarias.
+El armazón y los recursos estáticos de Swagger UI se sirven sin sesión porque una navegación del navegador no puede leer el JWT guardado en `sessionStorage`. La definición OpenAPI (`/v3/api-docs/**`) y su configuración (`/v3/api-docs/swagger-config`) siguen restringidas a Administración. El inicializador carga `/v3/api-docs` directamente para que Swagger aplique el interceptor, adjunta el Bearer de `avianto.session` solo a solicitudes del mismo origen y renueva el token de acceso próximo a vencer. Una primera versión desplegada dejó el indicador de carga porque la configuración remota se solicita antes del interceptor; `99c4c24` elimina esa solicitud. Verificado en el navegador: Administración cargó el documento y mostró las operaciones; las rutas OpenAPI anónimas devolvieron `403`. La seguridad y transformación también tienen pruebas automatizadas.
+
+### EN VERIFICACIÓN — P2 — Swagger “Try it out” anuncia HTTP detrás del proxy HTTPS
+
+**Reproducción**
+
+Con Administración en `https://avianto.neticar.com.ar/swagger-ui/index.html`, cargar la definición y ejecutar el GET de solo lectura `/api/auth/me`. OpenAPI anuncia `http://avianto.neticar.com.ar` en `servers[0].url`, aunque la página está en HTTPS. El navegador bloquea “Try it out” por contenido mixto (`Failed to fetch`).
+
+**Solución aplicada y verificación local**
+
+Caddy envía `X-Forwarded-Proto` y `X-Forwarded-Host`; Spring Boot estaba ignorando esos encabezados. `server.forward-headers-strategy=framework` hace que Spring use el origen externo al generar OpenAPI. La prueba `OpenApiForwardedHeadersTest` comprueba que el esquema anuncia `https://avianto.neticar.com.ar`; la suite local y la repetición de “Try it out” en producción quedan para el cierre del despliegue.
 
 ### RESUELTO — P3 — Las colecciones de propietarios y services aceptaban una moto inexistente
 
@@ -115,9 +125,9 @@ Una colección anidada bajo una moto inexistente debe responder `404`, igual que
 ## Verificación y alcance restante
 
 - Se ejercitó cada mapping al menos una vez y cada operación de negocio no GET tuvo un recorrido válido con Administración. Esto verifica contratos y flujos principales; no equivale a combinaciones exhaustivas de todos los valores, pruebas de carga, concurrencia ni pruebas de recuperación ante fallos de infraestructura.
-- Las cinco correcciones se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
-- Verificación local actual: backend `mvn test` — 91 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
-- La primera versión de integración quedó desplegada en `6c06745`; el smoke confirmó estado saludable y las rutas protegidas, pero Swagger UI permaneció cargando. El ajuste de carga directa está pendiente de publicación y verificación funcional.
+- Las correcciones de PATCH y de colecciones anidadas se cubrieron con pruebas de regresión. El resto del alcance no incluyó pruebas de carga, concurrencia ni fallos de infraestructura.
+- Verificación local actual: backend `mvn test` — 92 pruebas aprobadas; frontend `npm test` — build completado y 6 pruebas aprobadas; `npm run lint` — 0 errores y 3 advertencias existentes de `<img>`. `git diff --check` no encontró errores de espacios.
+- La integración `99c4c24` quedó desplegada: readiness y contenedores están saludables, el armazón abre, OpenAPI anónimo devuelve `403` y la sesión de Administración carga la definición. “Try it out” reveló que el documento anuncia `http` detrás del proxy `https`; el commit con `server.forward-headers-strategy=framework` está pendiente de publicación y verificación final.
 - Los registros de auditoría permanecen en el ambiente de pruebas según lo autorizado; sus nombres usan el prefijo `QA-AUDIT-20261026-A`.
 
 <details>

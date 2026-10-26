@@ -16,6 +16,7 @@ spring:
 server:
   port: ${PORT:8081}
   error.include-message: never
+  forward-headers-strategy: framework
 management:
   endpoints.web.exposure.include: health,info
   endpoint.health.probes.enabled: true
