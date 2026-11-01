@@ -115,8 +115,7 @@ public class ApiController {
 
   // ---------- Auditoría / reportes / dashboard ----------
   @GetMapping("/auditoria") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public PageResponse<AuditResponse> audit(@RequestParam(required=false)String q,@RequestParam(required=false)UUID usuarioId,@RequestParam(required=false)String modulo,@RequestParam(required=false)String accion,@RequestParam(required=false)Instant fechaDesde,@RequestParam(required=false)Instant fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="50")int size){return api.audits(q,usuarioId,modulo,accion,fechaDesde,fechaHasta,page,size);}
-  @GetMapping("/reportes/resumen") public List<ReportResponse> summary(){return api.summary();}
-  @GetMapping("/reportes/evolucion") public List<ReportResponse> evolution(){return api.evolution();}
+  @GetMapping("/reportes/facturacion") public List<BillingMonthResponse> billing(){return api.billing();}
   @GetMapping("/dashboard") public DashboardResponse dashboard(@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta){return api.dashboard(fechaDesde,fechaHasta);}
   @GetMapping("/dashboard/taller") public TallerResponse taller(){return api.taller();}
   @GetMapping("/dashboard/fichas") public DashboardFichasResponse dashboardFichas(){return api.dashboardFichas();}
@@ -207,7 +206,8 @@ public class ApiController {
         new Col("Proveedor","text",o->str(((RepuestoResponse)o).proveedor())),
         new Col("Estado","text",o->str(((RepuestoResponse)o).estado())),
         new Col("Pago","text",o->str(((RepuestoResponse)o).estadoPago())),
-        new Col("Total","number",o->((RepuestoResponse)o).total().toPlainString()),
+        new Col("Total costo","number",o->((RepuestoResponse)o).totalCosto().toPlainString()),
+        new Col("Total venta","number",o->((RepuestoResponse)o).totalVenta().toPlainString()),
         new Col("Ítems","text",o->repuestoItems(((RepuestoResponse)o).items())));
     }
      if (requestedColumns != null && !requestedColumns.isBlank()) {

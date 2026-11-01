@@ -493,8 +493,8 @@ class OperationalIntegrityTest {
     Motovehiculo moto = moto(UUID.randomUUID());
     Cliente cliente = cliente(UUID.randomUUID());
     RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.motovehiculo = moto; pedido.cliente = cliente; pedido.total = BigDecimal.valueOf(150);
-    RepuestoPedidoItem retained = new RepuestoPedidoItem(); retained.id = UUID.randomUUID(); retained.pedido = pedido; retained.descripcion = "Aceite"; retained.tipo = RepuestoCategoria.REPUESTO; retained.subtotal = BigDecimal.valueOf(100); retained.estado = RepuestoItemState.PEDIDO;
-    RepuestoPedidoItem cancelled = new RepuestoPedidoItem(); cancelled.id = UUID.randomUUID(); cancelled.pedido = pedido; cancelled.descripcion = "Filtro"; cancelled.tipo = RepuestoCategoria.REPUESTO; cancelled.subtotal = BigDecimal.valueOf(50); cancelled.estado = RepuestoItemState.PEDIDO;
+    RepuestoPedidoItem retained = new RepuestoPedidoItem(); retained.id = UUID.randomUUID(); retained.pedido = pedido; retained.descripcion = "Aceite"; retained.tipo = RepuestoCategoria.REPUESTO; retained.subtotal = BigDecimal.valueOf(100); retained.subtotalVenta = BigDecimal.valueOf(100); retained.estado = RepuestoItemState.PEDIDO;
+    RepuestoPedidoItem cancelled = new RepuestoPedidoItem(); cancelled.id = UUID.randomUUID(); cancelled.pedido = pedido; cancelled.descripcion = "Filtro"; cancelled.tipo = RepuestoCategoria.REPUESTO; cancelled.subtotal = BigDecimal.valueOf(50); cancelled.subtotalVenta = BigDecimal.valueOf(50); cancelled.estado = RepuestoItemState.PEDIDO;
     pedido.items.add(retained); pedido.items.add(cancelled);
     when(db.get(RepuestoPedido.class, pedido.id)).thenReturn(pedido);
 
@@ -502,7 +502,7 @@ class OperationalIntegrityTest {
 
     assertEquals(RepuestoItemState.CANCELADO, cancelled.estado);
     assertEquals(new BigDecimal("100.00"), pedido.total);
-    assertEquals(new BigDecimal("100.00"), response.total());
+    assertEquals(new BigDecimal("100.00"), response.totalVenta());
   }
 
   @Test
@@ -513,7 +513,7 @@ class OperationalIntegrityTest {
     Ficha ficha = new Ficha(); ficha.id = fichaId; ficha.numero = "F-1"; ficha.cliente = cliente; ficha.motovehiculo = moto; ficha.fechaIngreso = LocalDate.now(); ficha.total = BigDecimal.valueOf(100); ficha.descuentoGlobal = BigDecimal.ZERO;
     FichaTrabajo trabajo = new FichaTrabajo(); trabajo.descripcion = "Cambio de aceite"; trabajo.precioAplicado = BigDecimal.valueOf(100); trabajo.descuento = BigDecimal.ZERO; trabajo.subtotal = BigDecimal.valueOf(100); ficha.trabajos.add(trabajo);
     RepuestoPedido pedido = new RepuestoPedido(); pedido.id = UUID.randomUUID(); pedido.numero = "R-1"; pedido.ficha = ficha; pedido.motovehiculo = moto; pedido.cliente = cliente; pedido.total = BigDecimal.valueOf(50);
-    RepuestoPedidoItem item = new RepuestoPedidoItem(); item.descripcion = "Filtro"; item.tipo = RepuestoCategoria.REPUESTO; item.cantidad = BigDecimal.ONE; item.precio = BigDecimal.valueOf(50); item.subtotal = BigDecimal.valueOf(50); pedido.items.add(item);
+    RepuestoPedidoItem item = new RepuestoPedidoItem(); item.descripcion = "Filtro"; item.tipo = RepuestoCategoria.REPUESTO; item.cantidad = BigDecimal.ONE; item.precio = BigDecimal.valueOf(50); item.subtotal = BigDecimal.valueOf(50); item.precioVenta = BigDecimal.valueOf(50); item.subtotalVenta = BigDecimal.valueOf(50); pedido.items.add(item);
     when(db.get(Ficha.class, fichaId)).thenReturn(ficha);
     when(db.all(contains("e.ficha.id=:ficha"), eq(RepuestoPedido.class), anyMap())).thenReturn(List.of(pedido));
 

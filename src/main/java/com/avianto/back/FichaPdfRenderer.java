@@ -140,14 +140,14 @@ final class FichaPdfRenderer {
         addBodyCell(items, item.tipo().label(), rowSurface);
         addBodyCell(items, quantity(item.cantidad()), rowSurface);
         addBodyCell(items, display(item.estado()), rowSurface);
-        addBodyCell(items, currency(item.precio()), rowSurface);
-        addBodyCell(items, currency(item.subtotal()), rowSurface);
+        addBodyCell(items, currency(item.precioVenta()), rowSurface);
+        addBodyCell(items, currency(item.subtotalVenta()), rowSurface);
         if (hasText(item.observaciones())) {
           addSpanCell(items, "Observación: " + item.observaciones().trim(), MUTED_FONT, 6);
         }
       }
       document.add(items);
-      if (!"Cancelado".equals(pedido.estado())) totalRepuestos = totalRepuestos.add(pedido.total());
+      if (!"Cancelado".equals(pedido.estado())) totalRepuestos = totalRepuestos.add(pedido.totalVenta());
     }
 
     PdfPTable finalTotal = createPairedTotalsTable();

@@ -33,6 +33,13 @@ public class ApiService {
   private String dirOf(String dir) { return "DESC".equalsIgnoreCase(dir) ? "DESC" : "ASC"; }
   private String sortable(String requested, Set<String> allowed, String fallback) { return allowed.contains(requested) ? requested : fallback; }
   private static BigDecimal money(BigDecimal value) { return value == null ? BigDecimal.ZERO : value.setScale(2, RoundingMode.HALF_UP); }
+  private static final BigDecimal GANANCIA_REPUESTOS_PCT = new BigDecimal("20");
+  private static BigDecimal precioVenta(BigDecimal costo, BigDecimal porcentaje) { return money(costo.multiply(BigDecimal.ONE.add(porcentaje.movePointLeft(2)))); }
+  private static void fijarPrecios(RepuestoPedidoItem i) {
+    i.subtotal = money(i.cantidad.multiply(i.precio));
+    i.precioVenta = precioVenta(i.precio, i.porcentajeGanancia);
+    i.subtotalVenta = money(i.cantidad.multiply(i.precioVenta));
+  }
   private static String blank(String value) { return value == null || value.isBlank() ? null : value.trim(); }
   private static String plateKey(String value) { return value == null ? "" : value.replaceAll("[^A-Za-z0-9]", "").toUpperCase(); }
   private static final ZoneId ARGENTINA = ZoneId.of("America/Argentina/Buenos_Aires");
@@ -64,7 +71,10 @@ public class ApiService {
     if (db.count("select count(f) from VentaFicha f where f.comprador.id=:id and f.finalizadaAt is null and f.canceladaAt is null and f.deletedAt is null", Map.of("id", id)) > 0) throw new BusinessException(409, "El cliente es comprador prospectivo de una venta activa");
     deleted(e); audit("Clientes", "ELIMINAR", e.nombre);
   }
-  private void copy(ClientRequest r, Cliente e) { e.nombre = r.nombre().trim(); e.documento = blank(r.documento()); e.telefono = r.telefono().trim(); e.email = blank(r.email()); e.direccion = blank(r.direccion()); e.observaciones = blank(r.observaciones()); }
+  private void copy(ClientRequest r, Cliente e) {
+    String documento = r.documento().trim();
+    if (db.count("select count(e) from Cliente e where e.deletedAt is null and lower(e.documento)=:doc and e.id<>:id", Map.of("doc", documento.toLowerCase(), "id", e.id)) > 0) throw new BusinessException(409, "Ya existe un cliente con ese DNI");
+    e.nombre = r.nombre().trim(); e.documento = documento; e.telefono = blank(r.telefono()); e.email = blank(r.email()); e.direccion = blank(r.direccion()); e.observaciones = blank(r.observaciones()); }
   private ClientResponse client(Cliente e) {
     long motos = db.count("select count(distinct p.motovehiculo.id) from PropietarioMoto p where p.cliente.id=:id and p.fechaHasta is null and p.deletedAt is null", Map.of("id", e.id));
     long fichas = db.count("select count(o) from Ficha o where o.cliente.id=:id and o.deletedAt is null", Map.of("id", e.id));
@@ -124,15 +134,15 @@ public class ApiService {
   }
   public ProfileResponse profile(UUID id) { return profile(db.get(Motovehiculo.class, id)); }
   public ProfileResponse createProfile(ProfileRequest r) {
-    if (r.clienteId() != null && (blank(r.clienteNombre()) != null || blank(r.clienteTelefono()) != null)) throw new BusinessException(400, "Elegí un cliente existente o cargá uno nuevo");
+    if (r.clienteId() != null && (blank(r.clienteNombre()) != null || blank(r.clienteDocumento()) != null || blank(r.clienteTelefono()) != null)) throw new BusinessException(400, "Elegí un cliente existente o cargá uno nuevo");
     ClientResponse client;
     if (r.clienteId() != null) {
       Cliente existing = db.get(Cliente.class, r.clienteId());
       if (!existing.activo || existing.deletedAt != null) throw new BusinessException(409, "Cliente inactivo");
       client = client(existing);
     } else {
-      if (blank(r.clienteNombre()) == null || blank(r.clienteTelefono()) == null) throw new BusinessException(400, "Ingresá el nombre y teléfono del cliente");
-      client = createClient(new ClientRequest(r.clienteNombre(), null, r.clienteTelefono(), null, null, null));
+      if (blank(r.clienteNombre()) == null || blank(r.clienteDocumento()) == null) throw new BusinessException(400, "Ingresá el nombre y el DNI del cliente");
+      client = createClient(new ClientRequest(r.clienteNombre(), r.clienteDocumento(), r.clienteTelefono(), null, null, null));
     }
     MotorcycleResponse moto = createMotorcycle(new MotorcycleRequest(client.id(), r.marcaId(), r.modelo(), r.patente(), r.anio(), r.kilometraje(), r.observaciones()));
     audit("Perfiles", "CREAR", moto.patente());
@@ -820,7 +830,8 @@ PropietarioMoto o = propietarioActual(m.id);
       if (!i.fichaTrabajo.ficha.id.equals(e.ficha.id) || i.fichaTrabajo.estadoTrabajo == TrabajoState.CANCELADO) throw new BusinessException(422, "El trabajo no pertenece a una ficha válida del pedido");
     }
     i.descripcion = r.descripcion().trim(); i.tipo = r.tipo(); i.cantidad = r.cantidad() == null ? BigDecimal.ONE : r.cantidad(); i.precio = money(r.precio());
-    i.subtotal = money(i.cantidad.multiply(i.precio));
+    i.porcentajeGanancia = GANANCIA_REPUESTOS_PCT;
+    fijarPrecios(i);
     i.estado = r.estado() == null || r.estado().isBlank() ? RepuestoItemState.PENDIENTE_DE_PEDIR : RepuestoItemState.of(r.estado());
     i.observaciones = blank(r.observaciones());
     e.items.add(i);
@@ -846,14 +857,15 @@ PropietarioMoto o = propietarioActual(m.id);
     } else item.fichaTrabajo = null;
     RepuestoItemState next = r.estado() == null || r.estado().isBlank() ? item.estado : RepuestoItemState.of(r.estado());
     if (next != item.estado && !validRepuestoItemTransition(item.estado, next)) throw new BusinessException(422, "Transición de ítem inválida");
-    item.descripcion = r.descripcion().trim(); item.tipo = r.tipo(); item.cantidad = r.cantidad() == null ? BigDecimal.ONE : r.cantidad(); item.precio = money(r.precio()); item.subtotal = money(item.cantidad.multiply(item.precio)); item.estado = next; item.observaciones = blank(r.observaciones());
+    item.descripcion = r.descripcion().trim(); item.tipo = r.tipo(); item.cantidad = r.cantidad() == null ? BigDecimal.ONE : r.cantidad(); item.precio = money(r.precio()); fijarPrecios(item); item.estado = next; item.observaciones = blank(r.observaciones());
   }
   private boolean validRepuestoItemTransition(RepuestoItemState current, RepuestoItemState next) { return (current == RepuestoItemState.PENDIENTE_DE_PEDIR && (next == RepuestoItemState.PEDIDO || next == RepuestoItemState.CANCELADO)) || (current == RepuestoItemState.PEDIDO && (next == RepuestoItemState.RECIBIDO || next == RepuestoItemState.CANCELADO)) || (current == RepuestoItemState.RECIBIDO && (next == RepuestoItemState.ENTREGADO || next == RepuestoItemState.CANCELADO)); }
-  private void recalcRepuesto(RepuestoPedido e) { e.total = money(e.items.stream().filter(x -> x.estado != RepuestoItemState.CANCELADO).map(x -> x.subtotal).reduce(BigDecimal.ZERO, BigDecimal::add)); }
+  private void recalcRepuesto(RepuestoPedido e) { e.total = money(e.items.stream().filter(x -> x.estado != RepuestoItemState.CANCELADO).map(x -> x.subtotalVenta).reduce(BigDecimal.ZERO, BigDecimal::add)); }
   private RepuestoResponse repuesto(RepuestoPedido e) {
-    List<RepuestoItemResponse> items = e.items.stream().map(i -> new RepuestoItemResponse(i.id, i.fichaTrabajo == null ? null : i.fichaTrabajo.id, i.descripcion, i.tipo, i.cantidad, i.precio, i.subtotal, i.estado.label(), i.observaciones)).toList();
+    List<RepuestoItemResponse> items = e.items.stream().map(i -> new RepuestoItemResponse(i.id, i.fichaTrabajo == null ? null : i.fichaTrabajo.id, i.descripcion, i.tipo, i.cantidad, i.precio, i.precioVenta, i.porcentajeGanancia, i.subtotal, i.subtotalVenta, i.estado.label(), i.observaciones)).toList();
+    BigDecimal totalCosto = money(e.items.stream().filter(x -> x.estado != RepuestoItemState.CANCELADO).map(x -> x.subtotal).reduce(BigDecimal.ZERO, BigDecimal::add));
     BigDecimal cobrado = montoCobrado(e.pagos);
-    return new RepuestoResponse(e.id, e.numero, e.motovehiculo.id, e.motovehiculo.patente, e.cliente.id, e.cliente.nombre, e.ficha == null ? null : e.ficha.id, e.fecha, e.estado.label(), e.estadoPago.label(), e.total, cobrado, saldo(e.total, cobrado), e.proveedor, e.observaciones, items, e.createdAt);
+    return new RepuestoResponse(e.id, e.numero, e.motovehiculo.id, e.motovehiculo.patente, e.cliente.id, e.cliente.nombre, e.ficha == null ? null : e.ficha.id, e.fecha, e.estado.label(), e.estadoPago.label(), totalCosto, e.total, cobrado, saldo(e.total, cobrado), e.proveedor, e.observaciones, items, e.createdAt);
   }
   public RepuestoResponse repuestoEstado(UUID id, StateRequest r) {
     RepuestoPedido e = db.get(RepuestoPedido.class, id); assertRepuestoEditable(e);
@@ -1064,21 +1076,44 @@ PropietarioMoto o = propietarioActual(m.id);
     return page("from Auditoria e", w, "from Auditoria e", ps, page, size, "fecha", "DESC", x -> { Auditoria a = (Auditoria) x; return new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion, a.entidad, a.entidadId, a.antes, a.despues, a.motivo, a.correlationId); });
   }
   private BigDecimal suma(String jpql, Map<String,Object> ps) { return money(db.one(jpql, BigDecimal.class, ps)); }
-  public List<ReportResponse> summary() {
-    Map<String,Object> ps = Map.of("desde", today().minusDays(30), "hasta", today());
-    return List.of(
-      new ReportResponse("Fichas último mes", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado <> com.avianto.back.FichaState.CANCELADA and e.fechaIngreso between :desde and :hasta", ps))),
-      new ReportResponse("Motos con service", BigDecimal.valueOf(nextServices().stream().filter(row -> !row.sinReferencia()).count())),
-      new ReportResponse("En proceso", BigDecimal.valueOf(db.count("select count(e) from Ficha e where e.deletedAt is null and e.estado in (com.avianto.back.FichaState.PENDIENTE,com.avianto.back.FichaState.EN_PROCESO,com.avianto.back.FichaState.REVISION)", Map.of())))
-    );
+  private static final class BillingMonth {
+    BigDecimal fichas = BigDecimal.ZERO;
+    BigDecimal repuestosCosto = BigDecimal.ZERO, repuestosVenta = BigDecimal.ZERO;
+    BigDecimal accesoriosCosto = BigDecimal.ZERO, accesoriosVenta = BigDecimal.ZERO;
+    BigDecimal sinFichaCosto = BigDecimal.ZERO, sinFichaVenta = BigDecimal.ZERO;
   }
-  public List<ReportResponse> evolution() {
-    Map<YearMonth, BigDecimal> acc = new TreeMap<>();
-    for (Object[] row : db.all("select e.fechaIngreso, e.total from Ficha e where e.deletedAt is null and e.estado <> com.avianto.back.FichaState.CANCELADA and e.fechaIngreso between :desde and :hasta", Object[].class, Map.of("desde", LocalDate.of(2000, 1, 1), "hasta", today()))) {
-      YearMonth ym = YearMonth.from((LocalDate) row[0]);
-      acc.merge(ym, money((BigDecimal) row[1]), BigDecimal::add);
+  private static YearMonth mesDe(LocalDate fecha, Instant creado) { return YearMonth.from(fecha != null ? fecha : creado.atZone(ARGENTINA).toLocalDate()); }
+  public List<BillingMonthResponse> billing() {
+    Map<YearMonth, BillingMonth> acc = new TreeMap<>();
+    for (Ficha f : db.all("select e from Ficha e where e.deletedAt is null and e.estado <> com.avianto.back.FichaState.CANCELADA", Ficha.class, Map.of())) {
+      BillingMonth mes = acc.computeIfAbsent(mesDe(f.fechaIngreso, f.createdAt), k -> new BillingMonth());
+      mes.fichas = mes.fichas.add(money(f.total));
     }
-    return acc.entrySet().stream().map(e -> new ReportResponse(e.getKey().toString(), e.getValue())).toList();
+    for (RepuestoPedido p : db.all("select e from RepuestoPedido e where e.deletedAt is null and e.estado <> com.avianto.back.RepuestoPedidoState.CANCELADO", RepuestoPedido.class, Map.of())) {
+      boolean conFicha = p.ficha != null;
+      if (conFicha && p.ficha.estado == FichaState.CANCELADA) continue;
+      BillingMonth mes = acc.computeIfAbsent(conFicha ? mesDe(p.ficha.fechaIngreso, p.ficha.createdAt) : mesDe(p.fecha, p.createdAt), k -> new BillingMonth());
+      for (RepuestoPedidoItem i : p.items) {
+        if (i.estado == RepuestoItemState.CANCELADO) continue;
+        if (!conFicha) {
+          mes.sinFichaCosto = mes.sinFichaCosto.add(i.subtotal);
+          mes.sinFichaVenta = mes.sinFichaVenta.add(i.subtotalVenta);
+        } else if (i.tipo == RepuestoCategoria.ACCESORIO) {
+          mes.accesoriosCosto = mes.accesoriosCosto.add(i.subtotal);
+          mes.accesoriosVenta = mes.accesoriosVenta.add(i.subtotalVenta);
+        } else {
+          mes.repuestosCosto = mes.repuestosCosto.add(i.subtotal);
+          mes.repuestosVenta = mes.repuestosVenta.add(i.subtotalVenta);
+        }
+      }
+    }
+    return acc.entrySet().stream().map(e -> {
+      BillingMonth m = e.getValue();
+      return new BillingMonthResponse(e.getKey().toString(), money(m.fichas),
+          money(m.repuestosCosto), money(m.repuestosVenta), money(m.repuestosVenta.subtract(m.repuestosCosto)),
+          money(m.accesoriosCosto), money(m.accesoriosVenta), money(m.accesoriosVenta.subtract(m.accesoriosCosto)),
+          money(m.sinFichaVenta), money(m.sinFichaCosto));
+    }).toList();
   }
   public DashboardResponse dashboard(LocalDate fechaDesde, LocalDate fechaHasta) {
     LocalDate hasta = fechaHasta == null ? today() : fechaHasta;

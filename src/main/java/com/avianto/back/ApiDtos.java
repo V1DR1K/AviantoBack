@@ -10,7 +10,7 @@ import java.util.*;
 public final class ApiDtos {
   private ApiDtos() {}
   public record PageResponse<T>(List<T> content, int page, int size, long totalElements, int totalPages, String sortBy, String direction) {}
-  public record ClientRequest(@NotBlank String nombre, String documento, @NotBlank String telefono, @Email String email, String direccion, String observaciones) {}
+  public record ClientRequest(@NotBlank String nombre, @NotBlank @Size(max=50) String documento, String telefono, @Email String email, String direccion, String observaciones) {}
   public record ClientResponse(UUID id, String nombre, String documento, String telefono, String email, String direccion, String observaciones, boolean activo, long motos, long fichas, Instant createdAt, Instant updatedAt) {}
   public record NameRequest(@NotBlank @Size(max=120) String nombre, Boolean activo) {}
   public record NamedResponse(UUID id, String nombre, boolean activo, Instant createdAt, Instant updatedAt) {}
@@ -18,7 +18,7 @@ public final class ApiDtos {
   public record UserResponse(UUID id, String nombre, String email, Role rol, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotorcycleRequest(UUID clienteId, @NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones) {}
   public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
-  public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteTelefono) {}
+  public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteDocumento, String clienteTelefono) {}
   public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record IntakeRequest(@NotBlank String seccion) {}
   public record CircuitChangeRequest(@NotBlank String seccion, @NotBlank @Size(max=500) String motivo) {}
@@ -73,9 +73,9 @@ public final class ApiDtos {
   public record RepuestoItemRequest(@NotBlank String descripcion, @NotNull RepuestoCategoria tipo, UUID fichaTrabajoId, @NotNull @Positive @Digits(integer=12,fraction=2) BigDecimal cantidad, @NotNull @DecimalMin("0.00") @Digits(integer=12,fraction=2) BigDecimal precio, String estado, String observaciones, UUID id) {
     public RepuestoItemRequest(String descripcion, RepuestoCategoria tipo, UUID fichaTrabajoId, BigDecimal cantidad, BigDecimal precio, String estado, String observaciones) { this(descripcion, tipo, fichaTrabajoId, cantidad, precio, estado, observaciones, null); }
   }
-  public record RepuestoItemResponse(UUID id, UUID fichaTrabajoId, String descripcion, RepuestoCategoria tipo, BigDecimal cantidad, BigDecimal precio, BigDecimal subtotal, String estado, String observaciones) {}
+  public record RepuestoItemResponse(UUID id, UUID fichaTrabajoId, String descripcion, RepuestoCategoria tipo, BigDecimal cantidad, BigDecimal precioCosto, BigDecimal precioVenta, BigDecimal porcentajeGanancia, BigDecimal subtotalCosto, BigDecimal subtotalVenta, String estado, String observaciones) {}
   public record RepuestoRequest(@NotNull UUID motoVehiculoId, @NotNull UUID clienteId, UUID fichaId, LocalDate fecha, String proveedor, String observaciones, @NotEmpty List<@Valid RepuestoItemRequest> items) {}
-  public record RepuestoResponse(UUID id, String numero, UUID motoId, String patente, UUID clienteId, String cliente, UUID fichaId, LocalDate fecha, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, String proveedor, String observaciones, List<RepuestoItemResponse> items, Instant creadoEn) {}
+  public record RepuestoResponse(UUID id, String numero, UUID motoId, String patente, UUID clienteId, String cliente, UUID fichaId, LocalDate fecha, String estado, String estadoPago, BigDecimal totalCosto, BigDecimal totalVenta, BigDecimal montoCobrado, BigDecimal saldoPendiente, String proveedor, String observaciones, List<RepuestoItemResponse> items, Instant creadoEn) {}
   public record ControlRequest(@NotBlank @Size(max=200) String nombre, String descripcion, Boolean obligatorio, Integer orden, Boolean activo, List<UUID> categoriaIds) {}
   public record ControlResponse(UUID id, String nombre, String descripcion, boolean obligatorio, int orden, boolean activo, List<NamedResponse> categorias, Instant createdAt, Instant updatedAt) {}
   public static final class RevisionControlRequest {
@@ -101,6 +101,7 @@ public final class ApiDtos {
   public record AutocompleteResponse(UUID id, String label, String secondary) {}
   public record AuditResponse(UUID id, Instant fecha, String usuario, String modulo, String accion, String descripcion, String entidad, UUID entidadId, String antes, String despues, String motivo, String correlationId) {}
   public record ReportResponse(String etiqueta, BigDecimal valor) {}
+  public record BillingMonthResponse(String mes, BigDecimal fichasTotal, BigDecimal repuestosCosto, BigDecimal repuestosVenta, BigDecimal repuestosGanancia, BigDecimal accesoriosCosto, BigDecimal accesoriosVenta, BigDecimal accesoriosGanancia, BigDecimal pedidosSinFichaVenta, BigDecimal pedidosSinFichaCosto) {}
   public record DashboardOrderResponse(UUID id, String numero, String cliente, String moto, String estado, BigDecimal total, Instant createdAt) {}
   public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, List<DashboardOrderResponse> recientes) {}
   public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso) {}
