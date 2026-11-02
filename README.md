@@ -29,3 +29,9 @@ For a locally installed PostgreSQL, export the variables from `.env` and run `./
 Run `./mvnw test`. The complete local stack can be validated with `docker compose --env-file .env -f docker-compose.full.yml config` before startup.
 
 Backups are created atomically with mode `0600`. Restore requires an explicit confirmation: `AVIANTO_ALLOW_RESTORE=1 ./restore.sh /ruta/al/respaldo.sql.gz`; stop the application before restoring. Use `./ops/validate-migrations.sh`, `./ops/verify-restore.sh` and `node ops/api-smoke.mjs` as release evidence. See `docs/release-runbook.md`.
+
+## Docker portable y copias desde la app
+
+`../docker` contiene el stack completo (PostgreSQL 17 + backend + frontend + nginx) para instalar en cualquier PC con Docker: `empaquetar.bat` construye las imágenes y arma el instalador; `instalar.bat` / `restaurar.bat` lo instalan y restauran en la PC destino. Guía completa: `../instalacion_tutorial_avianto.pdf`.
+
+Las copias se administran en **Gestión → Administración → Copias de seguridad** (`/api/configuracion/backups/**`, solo ROLE_ADMINISTRACION): `pg_dump` a la carpeta montada en `/backups` (`BACKUP_DIR`) y/o a Google Drive (OAuth, scope `drive.file`, carpeta «Avianto Backups»), manual o diaria. Las tablas `backup_settings` y `backup_run` se excluyen de los dumps. La imagen del backend incluye `postgresql-client-17`: debe coincidir con la versión mayor del servidor.
