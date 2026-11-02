@@ -12,7 +12,7 @@ import java.util.zip.GZIPInputStream;
 
 class BackupServiceTest {
   private BackupService service(Path dir, String pgDump) throws Exception {
-    return new BackupService(null, new GoogleDrive(), dir.toString(), "C:/AviantoBackups", pgDump, "jdbc:postgresql://postgres:5432/avianto", "avianto", "secret", "http://localhost:8080/", "0123456789012345678901234567890123456789");
+    return new BackupService(null, new DriveScriptClient(), dir.toString(), "C:/AviantoBackups", pgDump, "jdbc:postgresql://postgres:5432/avianto", "avianto", "secret", "0123456789012345678901234567890123456789");
   }
 
   @Test void subfolderCannotEscapeTheMountedDirectory(@TempDir Path dir) throws Exception {
@@ -25,17 +25,25 @@ class BackupServiceTest {
 
   @Test void secretsRoundTripAndNeverStoreThePlainText(@TempDir Path dir) throws Exception {
     BackupService service = service(dir, "pg_dump");
-    String encrypted = service.encrypt("1//refresh-token");
-    assertNotEquals("1//refresh-token", encrypted);
-    assertFalse(encrypted.contains("refresh"));
-    assertEquals("1//refresh-token", service.decrypt(encrypted));
-    assertNotEquals(encrypted, service.encrypt("1//refresh-token"), "cada cifrado usa un IV distinto");
+    String encrypted = service.encrypt("https://script.google.com/macros/s/AKfycb/exec");
+    assertFalse(encrypted.contains("script.google"));
+    assertEquals("https://script.google.com/macros/s/AKfycb/exec", service.decrypt(encrypted));
+    assertNotEquals(encrypted, service.encrypt("https://script.google.com/macros/s/AKfycb/exec"), "cada cifrado usa un IV distinto");
     assertNull(service.decrypt("no-es-un-secreto-valido"));
     assertNull(service.decrypt(null));
   }
 
-  @Test void redirectUriIgnoresTrailingSlash(@TempDir Path dir) throws Exception {
-    assertEquals("http://localhost:8080/api/configuracion/backups/drive/callback", service(dir, "pg_dump").redirectUri());
+  @Test void onlyTheAppsScriptWebAppAddressIsAccepted() {
+    assertEquals("https://script.google.com/macros/s/AKfycbx123/exec", BackupService.validScriptUrl("  https://script.google.com/macros/s/AKfycbx123/exec "));
+    for (String rejected : new String[] { "", "no es una url", "http://script.google.com/macros/s/x/exec", "https://evil.example.com/macros/s/x/exec", "https://script.google.com/macros/s/x/dev", "https://script.google.com/u/0/home/projects" }) {
+      assertThrows(BusinessException.class, () -> BackupService.validScriptUrl(rejected), rejected);
+    }
+  }
+
+  @Test void theTokenGoesInsideTheScriptCodeAndTheTemplateHasOnePlaceholder() throws Exception {
+    assertEquals("const TOKEN = 'abc';", BackupService.renderScript("const TOKEN = '" + BackupService.TOKEN_PLACEHOLDER + "';", "abc"));
+    String template = new String(getClass().getResourceAsStream("/" + BackupService.SCRIPT_RESOURCE).readAllBytes(), StandardCharsets.UTF_8);
+    assertEquals(1, template.split(BackupService.TOKEN_PLACEHOLDER, -1).length - 1);
   }
 
   @Test void dumpWritesAtomicGzipAndRejectsIncompleteOutput(@TempDir Path dir) throws Exception {

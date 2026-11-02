@@ -29,7 +29,6 @@ app:
   timezone: America/Argentina/Buenos_Aires
   cors.allowed-origins: ${CORS_ALLOWED_ORIGINS:https://avianto.neticar.com.ar}
   permissions.operario: ${AVIANTO_OPERATOR_PERMISSIONS:FICHA_WRITE,REVIEW_WRITE,SALE_CHECKLIST,MOTO_CIRCUIT,SERVICE_WRITE}
-  public-url: ${AVIANTO_PUBLIC_URL:http://localhost:8080}
   backup:
     dir: ${BACKUP_DIR:./backups}
     host-dir: ${AVIANTO_BACKUP_HOST_DIR:}

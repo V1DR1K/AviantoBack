@@ -5,6 +5,7 @@ import jakarta.annotation.PreDestroy;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
@@ -12,6 +13,8 @@ import javax.crypto.Cipher;
 import javax.crypto.spec.GCMParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 import java.io.*;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.*;
 import java.nio.file.attribute.PosixFilePermissions;
@@ -40,27 +43,27 @@ class BackupService {
   private static final Pattern JDBC = Pattern.compile("jdbc:postgresql://([^:/]+)(?::(\\d+))?/([^?]+).*");
   private static final String DUMP_END_MARK = "PostgreSQL database dump complete";
   private static final int KEEP_NEWEST = 3;
-  static final String CALLBACK_PATH = "/api/configuracion/backups/drive/callback";
+  static final String SCRIPT_RESOURCE = "drive/avianto-backup.gs";
+  static final String TOKEN_PLACEHOLDER = "__AVIANTO_TOKEN__";
+  static final String SCRIPT_URL_HINT = "La dirección tiene que ser la de la aplicación web de Google Apps Script: empieza con https://script.google.com/macros/s/ y termina en /exec.";
 
-  record Settings(boolean destinoLocal, boolean destinoDrive, boolean autoEnabled, int autoHour, String subcarpeta, int retentionDays, String driveClientId, String driveClientSecretEnc, String driveRefreshTokenEnc, String driveAccount, String driveFolderId, String driveFolderName, LocalDate lastAutoOkDate, Instant lastAutoAttemptAt) {}
+  record Settings(boolean destinoLocal, boolean destinoDrive, boolean autoEnabled, int autoHour, String subcarpeta, int retentionDays, String driveScriptUrlEnc, String driveScriptTokenEnc, String driveAccount, String driveFolderName, LocalDate lastAutoOkDate, Instant lastAutoAttemptAt) {}
   record Run(String id, Instant startedAt, Instant finishedAt, String trigger, String status, String fileName, Long sizeBytes, String localResult, String driveResult, String message) {}
-  private record Pending(UUID userId, Instant expires) {}
 
-  private final JdbcTemplate jdbc; private final GoogleDrive drive;
-  private final Path baseDir; private final String hostDir, pgDump, dbHost, dbPort, dbName, dbUser, dbPassword, publicUrl; private final byte[] secretKey;
+  private final JdbcTemplate jdbc; private final DriveScriptClient drive;
+  private final Path baseDir; private final String hostDir, pgDump, dbHost, dbPort, dbName, dbUser, dbPassword; private final byte[] secretKey;
   private final ExecutorService executor = Executors.newSingleThreadExecutor(r -> { Thread t = new Thread(r, "avianto-backup"); t.setDaemon(true); return t; });
-  private final Map<String, Pending> pendingLinks = new ConcurrentHashMap<>();
   private final java.util.concurrent.atomic.AtomicBoolean running = new java.util.concurrent.atomic.AtomicBoolean(false);
   private final SecureRandom random = new SecureRandom();
 
-  BackupService(JdbcTemplate jdbc, GoogleDrive drive,
+  BackupService(JdbcTemplate jdbc, DriveScriptClient drive,
       @Value("${app.backup.dir:./backups}") String dir, @Value("${app.backup.host-dir:}") String hostDir, @Value("${app.backup.pg-dump:pg_dump}") String pgDump,
       @Value("${spring.datasource.url}") String url, @Value("${spring.datasource.username}") String user, @Value("${spring.datasource.password:}") String password,
-      @Value("${app.public-url:http://localhost:8080}") String publicUrl, @Value("${app.jwt.secret}") String jwtSecret) throws Exception {
+      @Value("${app.jwt.secret}") String jwtSecret) throws Exception {
     this.jdbc = jdbc; this.drive = drive; this.baseDir = Paths.get(dir).toAbsolutePath().normalize(); this.hostDir = hostDir; this.pgDump = pgDump;
     Matcher m = JDBC.matcher(url);
     this.dbHost = m.matches() ? m.group(1) : "localhost"; this.dbPort = m.matches() && m.group(2) != null ? m.group(2) : "5432"; this.dbName = m.matches() ? m.group(3) : "avianto";
-    this.dbUser = user; this.dbPassword = password; this.publicUrl = publicUrl.replaceAll("/+$", "");
+    this.dbUser = user; this.dbPassword = password;
     this.secretKey = MessageDigest.getInstance("SHA-256").digest((jwtSecret + "|avianto-backup").getBytes(StandardCharsets.UTF_8));
   }
 
@@ -79,11 +82,11 @@ class BackupService {
   Settings settings() {
     ensureSettingsRow();
     return jdbc.queryForObject("select * from backup_settings where id=1", (rs, i) -> new Settings(rs.getBoolean("destino_local"), rs.getBoolean("destino_drive"), rs.getBoolean("auto_enabled"), rs.getInt("auto_hour"), rs.getString("subcarpeta"), rs.getInt("retention_days"),
-      rs.getString("drive_client_id"), rs.getString("drive_client_secret_enc"), rs.getString("drive_refresh_token_enc"), rs.getString("drive_account"), rs.getString("drive_folder_id"), rs.getString("drive_folder_name"),
+      rs.getString("drive_script_url_enc"), rs.getString("drive_script_token_enc"), rs.getString("drive_account"), rs.getString("drive_folder_name"),
       rs.getDate("last_auto_ok_date") == null ? null : rs.getDate("last_auto_ok_date").toLocalDate(), rs.getTimestamp("last_auto_attempt_at") == null ? null : rs.getTimestamp("last_auto_attempt_at").toInstant()));
   }
 
-  boolean driveConnected(Settings s) { return s.driveRefreshTokenEnc() != null && decrypt(s.driveRefreshTokenEnc()) != null && s.driveClientId() != null && decrypt(s.driveClientSecretEnc()) != null; }
+  boolean driveConnected(Settings s) { return decrypt(s.driveScriptUrlEnc()) != null && decrypt(s.driveScriptTokenEnc()) != null; }
 
   void saveSettings(boolean local, boolean driveOn, boolean auto, int hour, String subfolder, int retention) {
     Settings s = settings();
@@ -112,57 +115,53 @@ class BackupService {
     catch (Exception e) { return false; }
   }
 
-  // ---------- vinculación con Google Drive ----------
+  // ---------- Google Drive mediante Google Apps Script (sin OAuth ni Google Cloud) ----------
 
-  String redirectUri() { return publicUrl + CALLBACK_PATH; }
-  String publicUrl() { return publicUrl; }
-
-  void saveDriveCredentials(String clientId, String clientSecret) {
-    String id = clientId == null ? "" : clientId.trim(), secret = clientSecret == null ? "" : clientSecret.trim();
-    if (id.isEmpty()) throw new BusinessException(422, "Pegá el ID de cliente que te dio Google.");
+  /** Código del script con la clave de esta instalación. La clave se crea la primera vez que se pide. */
+  String driveScript() {
     Settings s = settings();
-    if (secret.isEmpty() && s.driveClientSecretEnc() == null) throw new BusinessException(422, "Pegá el secreto de cliente que te dio Google.");
-    boolean changed = !id.equals(s.driveClientId()) || !secret.isEmpty();
-    jdbc.update("update backup_settings set drive_client_id=?, drive_client_secret_enc=? where id=1", id, secret.isEmpty() ? s.driveClientSecretEnc() : encrypt(secret));
-    if (changed) clearDriveLink(false);
+    String token = decrypt(s.driveScriptTokenEnc());
+    if (token == null) {
+      // Una clave nueva invalida cualquier script anterior: se desvincula para no quedar con datos viejos.
+      token = HexFormat.of().formatHex(randomBytes(32));
+      jdbc.update("update backup_settings set drive_script_token_enc=?, drive_script_url_enc=null, drive_account=null, drive_folder_name=null, destino_drive=false, destino_local=true where id=1", encrypt(token));
+    }
+    return renderScript(template(), token);
   }
 
-  String startDriveLink(UUID userId) {
-    Settings s = settings(); String secret = decrypt(s.driveClientSecretEnc());
-    if (s.driveClientId() == null || secret == null) throw new BusinessException(422, "Primero guardá el ID y el secreto de cliente de Google (paso 1).");
-    pendingLinks.values().removeIf(p -> p.expires().isBefore(Instant.now()));
-    byte[] nonce = new byte[24]; random.nextBytes(nonce);
-    String state = HexFormat.of().formatHex(nonce);
-    pendingLinks.put(state, new Pending(userId, Instant.now().plusSeconds(600)));
-    return drive.authorizationUrl(s.driveClientId(), redirectUri(), state);
+  static String renderScript(String template, String token) { return template.replace(TOKEN_PLACEHOLDER, token); }
+
+  private static String template() {
+    try (InputStream in = new ClassPathResource(SCRIPT_RESOURCE).getInputStream()) { return new String(in.readAllBytes(), StandardCharsets.UTF_8); }
+    catch (IOException e) { throw new IllegalStateException("Falta el script de copias en la aplicación.", e); }
   }
 
-  /** Devuelve null si todo salió bien o el motivo del error para mostrar en pantalla. */
-  String finishDriveLink(String state, String code, String googleError) {
-    Pending pending = state == null ? null : pendingLinks.remove(state);
-    if (pending == null || pending.expires().isBefore(Instant.now())) return "El enlace de vinculación venció. Volvé a intentarlo desde Administración.";
-    if (googleError != null || code == null) return "access_denied".equals(googleError) ? "Cancelaste la autorización en Google. No se vinculó ninguna cuenta." : "Google no completó la autorización (" + googleError + ").";
+  /** Solo se acepta la aplicación web de Apps Script: el backend le manda datos a esa dirección. */
+  static String validScriptUrl(String raw) {
+    String url = raw == null ? "" : raw.trim();
     try {
-      Settings s = settings(); String secret = decrypt(s.driveClientSecretEnc());
-      if (s.driveClientId() == null || secret == null) return "Faltan las credenciales de Google. Guardalas de nuevo en el paso 1.";
-      GoogleDrive.Tokens tokens = drive.exchangeCode(s.driveClientId(), secret, redirectUri(), code);
-      String account = drive.accountEmail(tokens.accessToken());
-      String folderName = "Avianto Backups"; String folderId = drive.createFolder(tokens.accessToken(), folderName);
-      jdbc.update("update backup_settings set drive_refresh_token_enc=?, drive_account=?, drive_folder_id=?, drive_folder_name=? where id=1", encrypt(tokens.refreshToken()), account, folderId, folderName);
-      audit(pending.userId(), "BACKUP_DRIVE_VINCULAR", "Se vinculó Google Drive (" + account + ").");
-      return null;
-    } catch (Exception e) { log.warn("Falló la vinculación con Google Drive: {}", e.getMessage()); return e.getMessage(); }
+      URI uri = new URI(url);
+      String path = uri.getPath() == null ? "" : uri.getPath();
+      if ("https".equalsIgnoreCase(uri.getScheme()) && "script.google.com".equalsIgnoreCase(uri.getHost()) && path.startsWith("/macros/s/") && path.endsWith("/exec")) return url;
+    } catch (URISyntaxException ignored) { }
+    throw new BusinessException(422, SCRIPT_URL_HINT);
+  }
+
+  void linkDrive(UUID userId, String rawUrl) {
+    String url = validScriptUrl(rawUrl);
+    String token = decrypt(settings().driveScriptTokenEnc());
+    if (token == null) throw new BusinessException(422, "Primero copiá el script (paso 2) y pegalo en Google.");
+    DriveScriptClient.Result result;
+    try { result = drive.ping(url, token); }
+    catch (DriveAuthException e) { throw new BusinessException(422, e.getMessage()); }
+    catch (IOException e) { throw new BusinessException(422, "No se pudo conectar con el script: " + clean(e)); }
+    jdbc.update("update backup_settings set drive_script_url_enc=?, drive_account=?, drive_folder_name=? where id=1", encrypt(url), result.account(), result.folderName());
+    audit(userId, "BACKUP_DRIVE_VINCULAR", "Se vinculó Google Drive (" + result.account() + ").");
   }
 
   void disconnectDrive(UUID userId) {
-    clearDriveLink(true);
+    jdbc.update("update backup_settings set drive_script_url_enc=null, drive_script_token_enc=null, drive_account=null, drive_folder_name=null, destino_drive=false, destino_local=true where id=1");
     audit(userId, "BACKUP_DRIVE_DESVINCULAR", "Se desvinculó Google Drive.");
-  }
-
-  private void clearDriveLink(boolean revoke) {
-    Settings s = settings();
-    if (revoke && s.driveRefreshTokenEnc() != null) { String token = decrypt(s.driveRefreshTokenEnc()); if (token != null) drive.revoke(token); }
-    jdbc.update("update backup_settings set drive_refresh_token_enc=null, drive_account=null, drive_folder_id=null, drive_folder_name=null, destino_drive=false, destino_local=true where id=1");
   }
 
   // ---------- ejecución ----------
@@ -230,24 +229,11 @@ class BackupService {
     }
   }
 
-  private String uploadToDrive(Settings s, Path file, String name) throws Exception {
-    String secret = decrypt(s.driveClientSecretEnc()), refresh = decrypt(s.driveRefreshTokenEnc());
-    if (s.driveClientId() == null || secret == null || refresh == null) throw new DriveAuthException("Google Drive no está vinculado. Volvé a vincularlo desde el paso 2.");
-    String token = drive.accessToken(s.driveClientId(), secret, refresh);
-    String folderId = s.driveFolderId();
-    if (folderId == null || !drive.folderExists(token, folderId)) { folderId = recreateFolder(token, s); }
-    try { drive.upload(token, folderId, file, name, Files.size(file)); }
-    catch (DriveFolderMissingException e) { folderId = recreateFolder(token, s); drive.upload(token, folderId, file, name, Files.size(file)); }
-    try {
-      Instant cutoff = Instant.now().minus(Duration.ofDays(s.retentionDays())); List<GoogleDrive.Remote> files = drive.listBackups(token, folderId);
-      for (int i = KEEP_NEWEST; i < files.size(); i++) if (files.get(i).created().isBefore(cutoff)) drive.delete(token, files.get(i).id());
-    } catch (IOException e) { log.warn("No se pudo limpiar Google Drive: {}", e.getMessage()); }
-    return "Subida a Google Drive (carpeta " + (s.driveFolderName() == null ? "Avianto Backups" : s.driveFolderName()) + ", cuenta " + s.driveAccount() + ")";
-  }
-
-  private String recreateFolder(String token, Settings s) throws IOException {
-    String name = s.driveFolderName() == null ? "Avianto Backups" : s.driveFolderName(); String id = drive.createFolder(token, name);
-    jdbc.update("update backup_settings set drive_folder_id=? where id=1", id); return id;
+  private String uploadToDrive(Settings s, Path file, String name) throws IOException {
+    String url = decrypt(s.driveScriptUrlEnc()), token = decrypt(s.driveScriptTokenEnc());
+    if (url == null || token == null) throw new DriveAuthException("Google Drive no está vinculado. Volvé a vincularlo desde el paso 2.");
+    DriveScriptClient.Result result = drive.upload(url, token, name, file, s.retentionDays(), KEEP_NEWEST);
+    return "Subida a Google Drive (carpeta " + result.folderName() + ", cuenta " + result.account() + ")";
   }
 
   /** pg_dump → gzip → archivo temporal → verificación → renombrado atómico. Igual criterio que backup.sh. */
@@ -301,6 +287,7 @@ class BackupService {
 
   private static String clean(Exception e) { String m = e.getMessage() == null ? e.getClass().getSimpleName() : e.getMessage(); return m.length() > 350 ? m.substring(0, 350) : m; }
   private static void deleteQuietly(Path dir) { try (Stream<Path> s = Files.walk(dir)) { s.sorted(Comparator.reverseOrder()).forEach(p -> p.toFile().delete()); } catch (IOException ignored) { } }
+  private byte[] randomBytes(int length) { byte[] bytes = new byte[length]; random.nextBytes(bytes); return bytes; }
 
   String encrypt(String plain) {
     try {
