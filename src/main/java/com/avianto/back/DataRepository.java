@@ -12,6 +12,7 @@ public class DataRepository {
   public <T> T oneForUpdate(String jpql, Class<T> type, Map<String,?> params) { TypedQuery<T> query=em.createQuery(jpql,type); params.forEach(query::setParameter); List<T> results=query.setMaxResults(1).setLockMode(LockModeType.PESSIMISTIC_WRITE).getResultList(); return results.isEmpty() ? null : results.get(0); }
   public <T> T save(T entity) { return em.merge(entity); }
   public void persist(Object entity) { em.persist(entity); }
+  public void remove(Object entity) { em.remove(entity); }
   public void flush() { em.flush(); }
   public <T> List<T> list(String jpql, Class<T> type, Map<String,?> params, int page, int size) { TypedQuery<T> q=em.createQuery(jpql,type); params.forEach(q::setParameter); return q.setFirstResult(page*size).setMaxResults(size).getResultList(); }
   public long count(String jpql, Map<String,?> params) { TypedQuery<Long> q=em.createQuery(jpql,Long.class); params.forEach(q::setParameter); return q.getSingleResult(); }

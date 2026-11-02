@@ -54,6 +54,15 @@ public class ApiController {
   @PostMapping("/ventas/{id}/transferencia/asistencia") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaAsistencia(@PathVariable UUID id){return api.registrarAsistenciaVenta(id);}
   @PostMapping("/ventas/{id}/completar") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')") public VentaFichaResponse ventaCompletar(@PathVariable UUID id){return api.completarFichaVenta(id);}
 
+  // ---------- Imagen de la moto (miniatura o versión completa; el v= de la URL solo invalida la caché) ----------
+  @PutMapping("/motovehiculos/{id}/imagen") public VehicleImageResponse motoImage(@PathVariable UUID id,@Valid @RequestBody VehicleImageRequest r){return api.setVehicleImage(id,r);}
+  @DeleteMapping("/motovehiculos/{id}/imagen") @ResponseStatus(HttpStatus.NO_CONTENT) public void motoImageDelete(@PathVariable UUID id){api.deleteVehicleImage(id);}
+  @GetMapping("/motovehiculos/{id}/imagen") public ResponseEntity<byte[]> motoImage(@PathVariable UUID id,@RequestParam(defaultValue="miniatura")String tamano){
+    if (!Set.of("miniatura","completa").contains(tamano)) throw new BusinessException(400, "Tamaño de imagen inválido");
+    VehicleImageFile image=api.vehicleImage(id,tamano);
+    return ResponseEntity.ok().cacheControl(CacheControl.maxAge(Duration.ofDays(365)).cachePrivate().immutable()).contentType(MediaType.parseMediaType(image.contentType())).body(image.content());
+  }
+
   // ---------- Perfiles (una vista integral por moto) ----------
   @GetMapping("/perfiles") public PageResponse<ProfileResponse> profiles(@RequestParam(required=false)String q,@RequestParam(required=false)String dominio,@RequestParam(required=false)String moto,@RequestParam(required=false)String cliente,@RequestParam(required=false)String estado,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="20")int size,@RequestParam(defaultValue="patente")String sortBy,@RequestParam(defaultValue="ASC")String direction){return api.profiles(q,dominio,moto,cliente,estado,page,size,sortBy,direction);}
   @PostMapping("/perfiles") @ResponseStatus(HttpStatus.CREATED) public ProfileResponse createProfile(@Valid @RequestBody ProfileRequest r){return api.createProfile(r);}

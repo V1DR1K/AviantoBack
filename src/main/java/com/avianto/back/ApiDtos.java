@@ -17,9 +17,12 @@ public final class ApiDtos {
   public record UserRequest(@NotBlank String username, @NotBlank String nombre, @Email String email, @NotNull Role rol, Boolean activo, @Size(min=8,max=100) String password) {}
   public record UserResponse(UUID id, String nombre, String email, Role rol, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotorcycleRequest(UUID clienteId, @NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones) {}
-  public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
   public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteDocumento, String clienteTelefono) {}
-  public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
+  public record VehicleImageRequest(@Size(max=255) String filename, @NotBlank @Size(max=40) String contentType, @NotBlank String miniaturaBase64, @NotBlank String completaBase64, @NotNull @Positive Integer width, @NotNull @Positive Integer height) {}
+  public record VehicleImageResponse(UUID motovehiculoId, String contentType, int width, int height, Instant updatedAt) {}
+  public record VehicleImageFile(String contentType, byte[] content, Instant updatedAt) {}
   public record IntakeRequest(@NotBlank String seccion) {}
   public record CircuitChangeRequest(@NotBlank String seccion, @NotBlank @Size(max=500) String motivo) {}
   public static final class MotoConfigServiceRequest {
@@ -104,13 +107,13 @@ public final class ApiDtos {
   public record BillingMonthResponse(String mes, BigDecimal fichasTotal, BigDecimal repuestosCosto, BigDecimal repuestosVenta, BigDecimal repuestosGanancia, BigDecimal accesoriosCosto, BigDecimal accesoriosVenta, BigDecimal accesoriosGanancia, BigDecimal pedidosSinFichaVenta, BigDecimal pedidosSinFichaCosto) {}
   public record DashboardOrderResponse(UUID id, String numero, String cliente, String moto, String estado, BigDecimal total, Instant createdAt) {}
   public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, List<DashboardOrderResponse> recientes) {}
-  public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso) {}
+  public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt) {}
   public record TallerEstadoResponse(String estado, List<TallerMotoResponse> motos) {}
   public record TallerResponse(List<TallerEstadoResponse> estados) {}
-  public record DashboardFichaResponse(UUID id, String numero, String cliente, String moto, String patente, String estado, BigDecimal total, LocalDate fechaIngreso) {}
+  public record DashboardFichaResponse(UUID id, String numero, String cliente, String moto, String patente, String estado, BigDecimal total, LocalDate fechaIngreso, UUID motoId, Instant imagenActualizadaAt) {}
   public record DashboardFichaEstadoResponse(String estado, List<DashboardFichaResponse> fichas) {}
   public record DashboardFichasResponse(List<DashboardFichaEstadoResponse> estados) {}
-  public record VentaMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, String estado, LocalDate fechaIngreso) {}
+  public record VentaMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt) {}
   public record VentaEstadoResponse(String estado, List<VentaMotoResponse> motos) {}
   public record VentaResponse(List<VentaEstadoResponse> estados) {}
   public record LoginRequest(@NotBlank String username, @NotBlank String password) {}

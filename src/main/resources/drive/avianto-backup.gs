@@ -12,7 +12,6 @@ const TOKEN = '__AVIANTO_TOKEN__';
 const FOLDER_NAME = 'Avianto Backups';
 const FOLDER_KEY = 'FOLDER_ID';
 const BACKUP_NAME = /^avianto-\d{8}T\d{6}Z\.sql\.gz$/;
-const MAX_BYTES = 35 * 1024 * 1024;
 
 /** Ejecutala una vez desde el editor (elegí «probar» y tocá Ejecutar) para dar los permisos de Drive. */
 function probar() {
@@ -38,7 +37,6 @@ function doPost(e) {
 function subir_(carpeta, pedido) {
   if (!BACKUP_NAME.test(pedido.name)) return { ok: false, code: 'NAME', error: 'Nombre de copia no válido.' };
   const bytes = Utilities.base64Decode(pedido.dataBase64);
-  if (bytes.length > MAX_BYTES) return { ok: false, code: 'SIZE', error: 'La copia es demasiado grande para Google Apps Script.' };
   const archivo = carpeta.createFile(Utilities.newBlob(bytes, 'application/gzip', pedido.name));
   podar_(carpeta, Number(pedido.retentionDays), Number(pedido.keepNewest));
   return Object.assign({ ok: true, fileId: archivo.getId() }, estado_(carpeta));

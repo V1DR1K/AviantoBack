@@ -45,7 +45,8 @@ La URL **no cambia** con una nueva versión. En cambio, **Nueva implementación*
 
 ## Límites de Google Apps Script
 
-- Cada copia debe pesar **menos de 35 MB**. Si el taller crece hasta ese punto, Avianto lo informa en el resultado de la copia y hay que pasar a otra forma de guardarla.
+- Avianto no impone un tamaño máximo para la copia: el script acepta el archivo completo. Como el backend lo envía en memoria, una base muy grande necesita más memoria del contenedor de la aplicación.
+- Si la copia cambia de tamaño, el script nuevo debe publicarse como **Nueva versión** (ver «Cambiar o actualizar el script»), porque la versión anterior tenía un límite de 35 MB.
 - Cada ejecución del script puede tardar hasta **6 minutos**.
 - Google aplica cuotas diarias a las cuentas personales. Con una copia por día no se acercan a ellas.
 
@@ -62,7 +63,6 @@ En el paso 2 tocá **Desvincular cuenta**. Avianto olvida la URL y la clave, y l
 | **La dirección tiene que ser la de la aplicación web…** | Pegá la URL que aparece en **Implementar → Administrar implementaciones**, la que empieza con `https://script.google.com/macros/s/` y termina en `/exec`. |
 | **No se pudo conectar con el script** | Verificá internet en la PC y probá de nuevo. Si persiste, revisá que el proyecto siga existiendo en script.google.com. |
 | **Google pide autorizar otra vez** | Abrí el proyecto, elegí la función **probar**, tocá **Ejecutar** y aceptá los permisos. |
-| **La copia pesa más de 35 MB** | Ver «Límites» arriba. Si la copia también se guarda en esta PC, no se pierde: solo falla el envío a Drive. |
 | **Las copias en Drive dejaron de aparecer** | Revisá la carpeta «Avianto Backups» de la cuenta vinculada (no la de otra cuenta de Google) y el historial de copias en Avianto. |
 
 ## Nota para quien mantiene la instalación

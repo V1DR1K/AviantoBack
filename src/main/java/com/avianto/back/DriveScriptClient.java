@@ -25,7 +25,6 @@ class DriveAuthException extends IOException { DriveAuthException(String message
  */
 @Component
 class DriveScriptClient {
-  static final long MAX_UPLOAD_BYTES = 35L * 1024 * 1024;
   record Result(String folderName, String account) {}
 
   private static final String NO_RESPONDE = "Google no devolvió la respuesta del script. Revisá que la aplicación web esté implementada con acceso «Cualquier persona» y que la dirección termine en /exec.";
@@ -37,7 +36,6 @@ class DriveScriptClient {
   }
 
   Result upload(String scriptUrl, String token, String name, Path file, int retentionDays, int keepNewest) throws IOException {
-    if (Files.size(file) > MAX_UPLOAD_BYTES) throw new IOException("La copia pesa más de 35 MB y Google Apps Script no puede recibirla.");
     String data = Base64.getEncoder().encodeToString(Files.readAllBytes(file));
     return call(scriptUrl, Map.of("token", token, "action", "upload", "name", name, "dataBase64", data, "retentionDays", retentionDays, "keepNewest", keepNewest));
   }

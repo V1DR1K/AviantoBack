@@ -233,11 +233,11 @@ public class ApiService {
 
   private MotorcycleResponse moto(Motovehiculo e) {
     PropietarioMoto o = propietarioActual(e.id);
-    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
+    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt, e.imagenActualizadaAt);
   }
   private ProfileResponse profile(Motovehiculo e) {
     PropietarioMoto o = propietarioActual(e.id);
-    return new ProfileResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt);
+    return new ProfileResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt, e.imagenActualizadaAt);
   }
   String estadoMoto(UUID motoId) { return estadoMoto(db.get(Motovehiculo.class, motoId)); }
   private String estadoMoto(Motovehiculo moto) { return moto.estadoOperativo == null ? MotoState.DISPONIBLE.label() : moto.estadoOperativo.label(); }
@@ -765,6 +765,63 @@ PropietarioMoto o = propietarioActual(m.id);
   private static boolean webp(byte[] data) { return data.length >= 12 && data[0] == 'R' && data[1] == 'I' && data[2] == 'F' && data[3] == 'F' && data[8] == 'W' && data[9] == 'E' && data[10] == 'B' && data[11] == 'P'; }
   private PhotoResponse photo(UUID fichaId, FichaFoto f) { return new PhotoResponse(f.id, f.filename, f.contentType, f.createdAt, "/fichas/" + fichaId + "/fotos/" + f.id); }
 
+  // ---------- Imagen de la moto (miniatura y versión completa, guardadas en base64) ----------
+  static final int MAX_MINIATURA_BYTES = 100_000;
+  static final int MAX_COMPLETA_BYTES = 600_000;
+  private static final Set<String> IMAGEN_TIPOS = Set.of("image/webp", "image/jpeg", "image/png");
+  private static final byte[] PNG_SIGNATURE = {(byte) 0x89, 'P', 'N', 'G', 0x0D, 0x0A, 0x1A, 0x0A};
+  public VehicleImageResponse setVehicleImage(UUID id, VehicleImageRequest r) {
+    Motovehiculo moto = db.get(Motovehiculo.class, id);
+    if (moto.deletedAt != null) throw new BusinessException(409, "La moto está eliminada");
+    String type = r.contentType().toLowerCase(Locale.ROOT);
+    if (!IMAGEN_TIPOS.contains(type)) throw new BusinessException(400, "La imagen debe estar en formato WebP, JPEG o PNG");
+    byte[] miniatura = decodeImagen(r.miniaturaBase64(), type, MAX_MINIATURA_BYTES, "La miniatura");
+    byte[] completa = decodeImagen(r.completaBase64(), type, MAX_COMPLETA_BYTES, "La imagen");
+    MotovehiculoImagen imagen = imagenDe(id);
+    boolean nueva = imagen == null;
+    if (nueva) { imagen = new MotovehiculoImagen(); imagen.motovehiculoId = id; }
+    imagen.filename = r.filename() == null ? "imagen" : r.filename().replaceAll("[^a-zA-Z0-9._-]", "_");
+    imagen.contentType = type; imagen.width = r.width(); imagen.height = r.height();
+    imagen.miniaturaBase64 = Base64.getEncoder().encodeToString(miniatura);
+    imagen.completaBase64 = Base64.getEncoder().encodeToString(completa);
+    imagen.updatedAt = Instant.now();
+    if (nueva) db.persist(imagen);
+    moto.imagenActualizadaAt = imagen.updatedAt; touch(moto);
+    audit("Motovehículos", "IMAGEN", moto.patente);
+    return new VehicleImageResponse(id, type, r.width(), r.height(), imagen.updatedAt);
+  }
+  public void deleteVehicleImage(UUID id) {
+    Motovehiculo moto = db.get(Motovehiculo.class, id);
+    MotovehiculoImagen imagen = imagenDe(id);
+    if (imagen == null) return;
+    db.remove(imagen);
+    moto.imagenActualizadaAt = null; touch(moto);
+    audit("Motovehículos", "QUITAR IMAGEN", moto.patente);
+  }
+  public VehicleImageFile vehicleImage(UUID id, String tamano) {
+    db.get(Motovehiculo.class, id);
+    MotovehiculoImagen imagen = imagenDe(id);
+    if (imagen == null) throw new NotFoundException("La moto no tiene imagen");
+    String base64 = "miniatura".equals(tamano) ? imagen.miniaturaBase64 : imagen.completaBase64;
+    return new VehicleImageFile(imagen.contentType, Base64.getDecoder().decode(base64), imagen.updatedAt);
+  }
+  private MotovehiculoImagen imagenDe(UUID motoId) { return db.one("select i from MotovehiculoImagen i where i.motovehiculoId=:moto", MotovehiculoImagen.class, Map.of("moto", motoId)); }
+  private static byte[] decodeImagen(String base64, String type, int maxBytes, String label) {
+    byte[] data;
+    try { data = Base64.getDecoder().decode(base64); } catch (IllegalArgumentException ex) { throw new BusinessException(400, "base64 inválido"); }
+    if (data.length > maxBytes) throw new BusinessException(400, label + " supera el tamaño permitido");
+    if (!coincideConTipo(data, type)) throw new BusinessException(400, label + " no coincide con el formato " + type);
+    return data;
+  }
+  static boolean coincideConTipo(byte[] data, String type) {
+    return switch (type) {
+      case "image/jpeg" -> data.length >= 3 && (data[0] & 0xFF) == 0xFF && (data[1] & 0xFF) == 0xD8 && (data[2] & 0xFF) == 0xFF;
+      case "image/png" -> data.length >= PNG_SIGNATURE.length && Arrays.equals(Arrays.copyOf(data, PNG_SIGNATURE.length), PNG_SIGNATURE);
+      case "image/webp" -> webp(data);
+      default -> false;
+    };
+  }
+
   // ---------- Pedidos de repuestos (piezas y accesorios) ----------
   public PageResponse<RepuestoResponse> repuestos(String estado, String estadoPago, UUID motoId, UUID clienteId, String q, LocalDate desde, LocalDate hasta, boolean deleted, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
@@ -1133,7 +1190,7 @@ PropietarioMoto o = propietarioActual(m.id);
       Ficha ficha = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", moto.id));
       String state = estadoMoto(moto);
       if (!buckets.containsKey(state)) state = moto.ingresada ? "Ingresada Taller" : "Entregada";
-      buckets.get(state).add(new TallerMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, propietarioActual(moto.id) == null ? null : propietarioActual(moto.id).cliente.nombre, moto.kilometraje, ficha == null ? null : ficha.id, ficha == null ? null : ficha.numero, state, ficha == null ? null : ficha.fechaIngreso));
+      buckets.get(state).add(new TallerMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, propietarioActual(moto.id) == null ? null : propietarioActual(moto.id).cliente.nombre, moto.kilometraje, ficha == null ? null : ficha.id, ficha == null ? null : ficha.numero, state, ficha == null ? null : ficha.fechaIngreso, moto.imagenActualizadaAt));
     }
     List<TallerEstadoResponse> estados = buckets.entrySet().stream().map(entry -> new TallerEstadoResponse(entry.getKey(), entry.getValue().stream().limit(100).toList())).toList();
     return new TallerResponse(estados);
@@ -1141,7 +1198,7 @@ PropietarioMoto o = propietarioActual(m.id);
   public DashboardFichasResponse dashboardFichas() {
     Map<FichaState, List<DashboardFichaResponse>> buckets = new EnumMap<>(FichaState.class);
     for (Ficha f : db.all("select f from Ficha f where f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of())) {
-      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new DashboardFichaResponse(f.id, f.numero, f.cliente.nombre, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.motovehiculo.patente, f.estado.label(), f.total, f.fechaIngreso));
+      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new DashboardFichaResponse(f.id, f.numero, f.cliente.nombre, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.motovehiculo.patente, f.estado.label(), f.total, f.fechaIngreso, f.motovehiculo.id, f.motovehiculo.imagenActualizadaAt));
     }
     List<DashboardFichaEstadoResponse> estados = Arrays.stream(FichaState.values()).map(s -> new DashboardFichaEstadoResponse(s.label(), buckets.getOrDefault(s, List.of()).stream().limit(100).toList())).toList();
     return new DashboardFichasResponse(estados);
@@ -1154,7 +1211,7 @@ PropietarioMoto o = propietarioActual(m.id);
       String state = estadoMoto(moto);
       if (!buckets.containsKey(state)) continue;
       PropietarioMoto owner = propietarioActual(moto.id);
-      buckets.get(state).add(new VentaMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, owner == null ? null : owner.cliente.nombre, moto.kilometraje, state, null));
+      buckets.get(state).add(new VentaMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, owner == null ? null : owner.cliente.nombre, moto.kilometraje, state, null, moto.imagenActualizadaAt));
     }
     return new VentaResponse(buckets.entrySet().stream().map(entry -> new VentaEstadoResponse(entry.getKey(), entry.getValue().stream().limit(100).toList())).toList());
   }
