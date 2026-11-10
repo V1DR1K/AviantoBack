@@ -72,6 +72,43 @@ class OperationalIntegrityTest {
   }
 
   @Test
+  void editingLatestServiceUpdatesMotorcycleLastServiceAndOdometer() {
+    UUID motoId = UUID.randomUUID(), serviceId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId); moto.kmUltimoService = 15000; moto.fechaUltimoService = LocalDate.of(2026, 5, 10); moto.kilometraje = 15000;
+    ServiceMoto editing = service(serviceId, moto, 15000, LocalDate.of(2026, 5, 10));
+    ServiceMoto older = service(UUID.randomUUID(), moto, 10000, LocalDate.of(2025, 5, 10));
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.get(ServiceMoto.class, serviceId)).thenReturn(editing);
+    when(db.all(contains("ServiceMoto"), eq(ServiceMoto.class), anyMap())).thenReturn(List.of(older));
+
+    ApiDtos.ServiceResponse response = api.updateService(motoId, serviceId, new ApiDtos.ServiceUpdateRequest(16000, LocalDate.of(2026, 5, 10), "Cambio de aceite"));
+
+    assertEquals(16000, response.kilometraje());
+    assertEquals("Cambio de aceite", response.observaciones());
+    assertEquals(16000, moto.kmUltimoService);
+    assertEquals(16000, moto.kilometraje);
+  }
+
+  @Test
+  void editingServiceRejectsServiceFromAnotherMotorcycle() {
+    UUID motoId = UUID.randomUUID(), serviceId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    ServiceMoto foreign = service(serviceId, moto(UUID.randomUUID()), 9000, LocalDate.of(2026, 1, 5));
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.get(ServiceMoto.class, serviceId)).thenReturn(foreign);
+
+    assertThrows(BusinessException.class, () -> api.updateService(motoId, serviceId, new ApiDtos.ServiceUpdateRequest(9500, LocalDate.of(2026, 1, 5), null)));
+
+    verify(db, never()).all(contains("ServiceMoto"), eq(ServiceMoto.class), anyMap());
+  }
+
+  private static ServiceMoto service(UUID id, Motovehiculo moto, int kilometraje, LocalDate fecha) {
+    ServiceMoto s = new ServiceMoto();
+    s.id = id; s.motovehiculo = moto; s.kilometraje = kilometraje; s.fecha = fecha;
+    return s;
+  }
+
+  @Test
   void fichaRequiresTheCurrentMotorcycleOwner() {
     UUID clienteId = UUID.randomUUID(), motoId = UUID.randomUUID();
     Cliente cliente = cliente(clienteId); Motovehiculo moto = moto(motoId);

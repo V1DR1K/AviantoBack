@@ -77,6 +77,7 @@ public class ApiController {
   @GetMapping("/motovehiculos/{id}/services") public List<ServiceResponse> services(@PathVariable UUID id){return api.services(id);}
   @GetMapping("/motovehiculos/{id}/services/historial") public PageResponse<ServiceResponse> serviceHistory(@PathVariable UUID id,@RequestParam(required=false)LocalDate fechaDesde,@RequestParam(required=false)LocalDate fechaHasta,@RequestParam(defaultValue="0")int page,@RequestParam(defaultValue="10")int size,@RequestParam(defaultValue="fecha")String sortBy,@RequestParam(defaultValue="DESC")String direction){return api.serviceHistory(id,fechaDesde,fechaHasta,page,size,sortBy,direction);}
   @PostMapping("/motovehiculos/{id}/services") @ResponseStatus(HttpStatus.CREATED) public ServiceResponse addService(@PathVariable UUID id,@Valid @RequestBody ServiceRequest r){return api.addService(id,r);}
+  @PutMapping("/motovehiculos/{id}/services/{serviceId}") public ServiceResponse updateService(@PathVariable UUID id,@PathVariable UUID serviceId,@Valid @RequestBody ServiceUpdateRequest r){return api.updateService(id,serviceId,r);}
   @GetMapping("/services/proximos") public List<NextServiceResponse> nextServices(){return api.nextServices();}
 
   // ---------- Fichas de trabajo ----------

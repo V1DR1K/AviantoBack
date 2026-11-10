@@ -495,6 +495,23 @@ public class ApiService {
     audit("Services", "REGISTRAR", m.patente + " km " + e.kilometraje);
     return service(e);
   }
+  public ServiceResponse updateService(UUID motoId, UUID serviceId, ServiceUpdateRequest req) {
+    if (req.kilometraje() == null || req.kilometraje() < 0) throw new BusinessException(400, "Kilometraje inválido");
+    Motovehiculo m = db.get(Motovehiculo.class, motoId);
+    ServiceMoto e = db.get(ServiceMoto.class, serviceId);
+    if (!e.motovehiculo.id.equals(m.id)) throw new BusinessException(422, "El service no pertenece a esta moto");
+    LocalDate fecha = req.fecha() == null ? today() : req.fecha();
+    if (fecha.isAfter(today())) throw new BusinessException(422, "La fecha del service no puede ser futura");
+    List<ServiceMoto> otros = db.all("select e from ServiceMoto e where e.motovehiculo.id=:moto and e.id<>:id order by e.fecha desc, e.createdAt desc", ServiceMoto.class, Map.of("moto", motoId, "id", serviceId));
+    if (!otros.isEmpty() && !fecha.isBefore(otros.get(0).fecha) && otros.get(0).kilometraje != null && req.kilometraje() < otros.get(0).kilometraje) throw new BusinessException(409, "El kilometraje no puede ser menor al último service de esa fecha");
+    e.kilometraje = req.kilometraje(); e.fecha = fecha; e.observaciones = blank(req.observaciones());
+    List<ServiceMoto> todos = new ArrayList<>(otros); todos.add(e);
+    ServiceMoto ultimo = todos.stream().max(Comparator.comparing((ServiceMoto s) -> s.fecha).thenComparing(s -> s.createdAt)).orElse(e);
+    m.kmUltimoService = ultimo.kilometraje; m.fechaUltimoService = ultimo.fecha;
+    if (m.kilometraje == null || e.kilometraje > m.kilometraje) m.kilometraje = e.kilometraje;
+    audit("Services", "EDITAR", m.patente + " km " + e.kilometraje + " fecha " + e.fecha);
+    return service(e);
+  }
   private ServiceResponse service(ServiceMoto e) { return new ServiceResponse(e.id, e.motovehiculo.id, e.ficha == null ? null : e.ficha.id, e.ficha == null ? null : e.ficha.numero, e.kilometraje, e.fecha, e.observaciones, e.realizadoPor == null ? null : e.realizadoPor.nombre, e.createdAt); }
   private void assertValidFichaLink(Ficha ficha, Motovehiculo moto, String entity) {
     if (ficha != null && (ficha.deletedAt != null || ficha.estado == FichaState.CANCELADA || !ficha.motovehiculo.id.equals(moto.id) || ficha.trabajos.stream().noneMatch(t -> t.estadoTrabajo != TrabajoState.CANCELADO))) throw new BusinessException(422, entity + " no puede asociarse a una ficha inválida");
