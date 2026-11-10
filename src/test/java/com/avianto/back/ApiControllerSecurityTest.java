@@ -26,7 +26,7 @@ class ApiControllerSecurityTest {
   @MockitoBean private DataRepository db;
 
   @Test
-  @WithMockUser(authorities = "ROLE_OPERARIO")
+  @WithMockUser(authorities = {"PERM_ventas.editar"})
   void operatorCanSynchronizeSaleChecklist() throws Exception {
     mvc.perform(post("/api/ventas/{id}/checklist/sincronizar", UUID.randomUUID()))
       .andExpect(status().isOk());
@@ -35,7 +35,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_OPERARIO")
+  @WithMockUser(authorities = {"PERM_ventas.editar"})
   void operatorCannotChangeSaleBuyer() throws Exception {
     mvc.perform(put("/api/ventas/{id}/comprador", UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON)
@@ -46,7 +46,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = {"ROLE_OPERARIO", "PERM_FICHA_WRITE"})
+  @WithMockUser(authorities = {"PERM_fichas.estado"})
   void operatorWithFichaPermissionCanRequestStateChange() throws Exception {
     mvc.perform(patch("/api/fichas/{id}/estado", UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON)
@@ -57,7 +57,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_OPERARIO")
+  @WithMockUser(authorities = {"PERM_fichas.estado", "PERM_fichas.editar"})
   void operatorCannotRegisterPayment() throws Exception {
     mvc.perform(post("/api/fichas/{id}/pagos", UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON)
@@ -68,7 +68,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_pagos.registrar"})
   void administratorCanRegisterPayment() throws Exception {
     mvc.perform(post("/api/fichas/{id}/pagos", UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON)
@@ -79,7 +79,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_OPERARIO")
+  @WithMockUser(authorities = {"PERM_fichas.ver"})
   void operatorCannotReadAudit() throws Exception {
     mvc.perform(get("/api/auditoria"))
       .andExpect(status().isForbidden());
@@ -88,7 +88,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_motos.ver", "PERM_services.ver", "PERM_transferencias.ver"})
   void missingMotorcycleChildCollectionsReturnNotFound() throws Exception {
     UUID motoId = UUID.randomUUID();
     when(api.owners(motoId)).thenThrow(new NotFoundException("Motovehículo inexistente"));
@@ -101,13 +101,13 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_api.docs"})
   void unknownApiRouteReturnsNotFound() throws Exception {
     mvc.perform(get("/api/v3/api-docs")).andExpect(status().isNotFound());
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_OPERARIO")
+  @WithMockUser(authorities = {"PERM_fichas.ver"})
   void operatorCannotReadOpenApiDocumentation() throws Exception {
     mvc.perform(get("/v3/api-docs")).andExpect(status().isForbidden());
   }
@@ -123,13 +123,13 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_api.docs"})
   void administratorCanReachProtectedOpenApiConfiguration() throws Exception {
     mvc.perform(get("/v3/api-docs/swagger-config")).andExpect(status().isNotFound());
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_motos.editar"})
   void serviceConfigPatchBindsOmittedAndExplicitNullSeparately() throws Exception {
     UUID motoId = UUID.randomUUID();
     mvc.perform(patch("/api/motovehiculos/{id}/config-service", motoId)
@@ -147,7 +147,7 @@ class ApiControllerSecurityTest {
   }
 
   @Test
-  @WithMockUser(authorities = "ROLE_ADMINISTRACION")
+  @WithMockUser(authorities = {"PERM_motos.editar"})
   void serviceConfigPatchStillValidatesNonNegativeIntervals() throws Exception {
     mvc.perform(patch("/api/motovehiculos/{id}/config-service", UUID.randomUUID())
         .contentType(MediaType.APPLICATION_JSON).content("{\"kmServicePeriodo\":-1}"))

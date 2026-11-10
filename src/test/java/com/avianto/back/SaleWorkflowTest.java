@@ -332,12 +332,11 @@ class SaleWorkflowTest {
     PreAuthorize complete = ApiController.class.getDeclaredMethod("ventaCompletar", UUID.class).getAnnotation(PreAuthorize.class);
     PreAuthorize circuit = ApiController.class.getDeclaredMethod("motoCircuito", UUID.class, ApiDtos.CircuitChangeRequest.class).getAnnotation(PreAuthorize.class);
 
-    assertTrue(checklist.value().contains("ROLE_OPERARIO"));
-    assertEquals("hasAuthority('ROLE_ADMINISTRACION')", buyer.value());
-    assertEquals("hasAuthority('ROLE_ADMINISTRACION')", cancel.value());
-    assertEquals("hasAuthority('ROLE_ADMINISTRACION')", complete.value());
-    assertTrue(circuit.value().contains("ROLE_ADMINISTRACION"));
-    assertTrue(circuit.value().contains("PERM_MOTO_CIRCUIT"));
+    assertTrue(checklist.value().contains("PERM_ventas.editar"));
+    assertEquals("hasAuthority('PERM_ventas.comprador')", buyer.value());
+    assertEquals("hasAuthority('PERM_ventas.transferir')", cancel.value());
+    assertEquals("hasAuthority('PERM_ventas.completar')", complete.value());
+    assertTrue(circuit.value().contains("PERM_motos.circuito"));
   }
 
   private static VentaFicha sale(Motovehiculo moto, Cliente seller, Cliente buyer, boolean required) {

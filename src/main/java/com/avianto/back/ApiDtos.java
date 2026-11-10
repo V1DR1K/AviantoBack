@@ -14,8 +14,12 @@ public final class ApiDtos {
   public record ClientResponse(UUID id, String nombre, String documento, String telefono, String email, String direccion, String observaciones, boolean activo, long motos, long fichas, Instant createdAt, Instant updatedAt) {}
   public record NameRequest(@NotBlank @Size(max=120) String nombre, Boolean activo) {}
   public record NamedResponse(UUID id, String nombre, boolean activo, Instant createdAt, Instant updatedAt) {}
-  public record UserRequest(@NotBlank String username, @NotBlank String nombre, @Email String email, @NotNull Role rol, Boolean activo, @Size(min=8,max=100) String password) {}
-  public record UserResponse(UUID id, String nombre, String email, Role rol, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public record UserRequest(@NotBlank String username, @NotBlank String nombre, @Email String email, @NotNull UUID rolId, Boolean activo, @Size(min=8,max=100) String password) {}
+  public record UserResponse(UUID id, String nombre, String email, String rol, UUID rolId, String rolNombre, List<String> permisos, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public record RolRequest(@NotBlank @Size(max=80) String nombre, @Size(max=255) String descripcion, @NotNull List<String> permisos) {}
+  public record RolResponse(UUID id, String codigo, String nombre, String descripcion, boolean sistema, boolean editable, long usuarios, List<String> permisos, Instant updatedAt) {}
+  public record PermisoItemResponse(String codigo, String etiqueta) {}
+  public record PermisoModuloResponse(String id, String nombre, List<PermisoItemResponse> permisos) {}
   public record MotorcycleRequest(UUID clienteId, @NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones) {}
   public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, LocalDate proximoServiceFecha, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
   public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteDocumento, String clienteTelefono) {}
@@ -37,6 +41,7 @@ public final class ApiDtos {
     @JsonSetter("kmServicePeriodo") public void setKmServicePeriodo(Integer value) { kmServicePeriodo = value; }
     @JsonSetter("mesesServicePeriodo") public void setMesesServicePeriodo(Integer value) { mesesServicePeriodo = value; }
     @JsonSetter("serviceObservaciones") public void setServiceObservaciones(String value) { serviceObservaciones = value; serviceObservacionesPresent = true; }
+    /** Presente en el JSON (aunque sea null) significa "fijar" o, con null, "volver al cálculo automático". */
     @JsonSetter("proximoServiceFecha") public void setProximoServiceFecha(LocalDate value) { proximoServiceFecha = value; proximoServiceFechaPresent = true; }
     public Integer kmServicePeriodo() { return kmServicePeriodo; }
     public Integer mesesServicePeriodo() { return mesesServicePeriodo; }

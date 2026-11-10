@@ -20,7 +20,7 @@ For a locally installed PostgreSQL, export the variables from `.env` and run `./
 - Entering a motorcycle in `Venta` is atomic: it is immediately available as `En venta`; no intermediate sales state exists.
 - Workshop flow: `Ingresada Taller` -> `Pendiente` -> `En proceso` -> `En revisión` -> `Terminada` -> `Entregada`. Approving the review marks the job as `Terminada`; delivery is recorded separately.
 - Completing or cancelling every work does not advance a ficha automatically. The operator must explicitly send it from `En proceso` to `En revisión` after reviewing the work order.
-- Operator permissions are controlled by `AVIANTO_OPERATOR_PERMISSIONS`, a comma-separated list such as `FICHA_WRITE,REVIEW_WRITE,SALE_CHECKLIST,MOTO_CIRCUIT,SERVICE_WRITE`.
+- Access is controlled by roles stored in the database (`rol`, `rol_permiso`). Each endpoint requires a `PERM_<modulo.accion>` authority from `Permisos.java`; `Administración` always holds every permission, and roles are edited from Gestión > Roles. The former `AVIANTO_OPERATOR_PERMISSIONS` variable no longer applies.
 - `Disponible` means the motorcycle is registered but outside both operational circuits (`ingresada=false` and no active section). It is not synonymous with `En venta`: only `En venta` represents a motorcycle entered into the sales circuit. Both states are mutually exclusive.
 - A ficha summary and its PDF include only `RepuestoPedido` records linked directly to that ficha. Their totals are shown separately from the ficha total and combined as the client-facing budget total without changing either persisted operation.
 

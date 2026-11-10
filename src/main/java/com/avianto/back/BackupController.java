@@ -30,7 +30,7 @@ class BackupController {
 
   private static UUID actor() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch (Exception e) { return null; } }
 
-  @GetMapping @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @GetMapping @PreAuthorize("hasAuthority('PERM_respaldos.ver')")
   StatusResponse status() {
     BackupService.Settings s = backups.settings();
     String effective = (backups.hostDir().isBlank() ? backups.baseDir().toString() : backups.hostDir()) + (s.subcarpeta().isBlank() ? "" : "/" + s.subcarpeta());
@@ -39,21 +39,21 @@ class BackupController {
       new DriveInfo(backups.driveConnected(s), s.driveAccount(), s.driveFolderName()), backups.history(10));
   }
 
-  @PutMapping @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @PutMapping @PreAuthorize("hasAuthority('PERM_respaldos.editar')")
   StatusResponse save(@Valid @RequestBody SettingsRequest r) { backups.saveSettings(r.destinoLocal(), r.destinoDrive(), r.autoEnabled(), r.autoHour(), r.subcarpeta(), r.retentionDays()); return status(); }
 
-  @PostMapping("/run") @ResponseStatus(HttpStatus.ACCEPTED) @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @PostMapping("/run") @ResponseStatus(HttpStatus.ACCEPTED) @PreAuthorize("hasAuthority('PERM_respaldos.ejecutar')")
   Map<String, Object> run() { backups.startManual(actor()); return Map.of("accepted", true); }
 
   /** Código del script de Google con la clave de esta instalación. Se copia desde Administración. */
-  @GetMapping(value = "/drive/script", produces = "text/plain;charset=UTF-8") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @GetMapping(value = "/drive/script", produces = "text/plain;charset=UTF-8") @PreAuthorize("hasAuthority('PERM_respaldos.ver')")
   ResponseEntity<String> driveScript() {
     return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").contentType(MediaType.TEXT_PLAIN).body(backups.driveScript());
   }
 
-  @PutMapping("/drive/link") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @PutMapping("/drive/link") @PreAuthorize("hasAuthority('PERM_respaldos.editar')")
   StatusResponse link(@Valid @RequestBody LinkRequest r) { backups.linkDrive(actor(), r.scriptUrl()); return status(); }
 
-  @PostMapping("/drive/disconnect") @PreAuthorize("hasAuthority('ROLE_ADMINISTRACION')")
+  @PostMapping("/drive/disconnect") @PreAuthorize("hasAuthority('PERM_respaldos.editar')")
   StatusResponse disconnect() { backups.disconnectDrive(actor()); return status(); }
 }

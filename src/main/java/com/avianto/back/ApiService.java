@@ -1125,21 +1125,72 @@ PropietarioMoto o = propietarioActual(m.id);
   public NamedResponse updateCategoria(UUID id, NameRequest r) { Categoria e = db.get(Categoria.class, id); e.nombre = r.nombre().trim(); if (r.activo() != null) e.activo = r.activo(); audit("CONFIG", "CATEGORÍAS", e.nombre); return new NamedResponse(e.id, e.nombre, e.activo, e.createdAt, e.updatedAt); }
   public void deleteCategoria(UUID id) { Categoria e = db.get(Categoria.class, id); if (db.count("select count(c) from ControlRevision c join c.categorias cat where cat.id=:id", Map.of("id", id)) > 0) throw new BusinessException(409, "La categoría está en uso por controles"); deleted(e); audit("CONFIG", "CATEGORÍAS", "eliminar"); }
   public List<UserResponse> users(boolean includeDeleted) { return db.all("select e from AppUser e where 1=1" + active(includeDeleted) + " order by e.nombre", AppUser.class, Map.of()).stream().map(this::user).toList(); }
-  public UserResponse user(AppUser e) { return new UserResponse(e.id, e.nombre, e.email, e.rol, e.activo, e.createdAt, e.updatedAt); }
+  public UserResponse user(AppUser e) { return new UserResponse(e.id, e.nombre, e.email, e.rol.codigo, e.rol.id, e.rol.nombre, e.rol.permisos.stream().sorted().toList(), e.activo, e.createdAt, e.updatedAt); }
   public UserResponse createUser(UserRequest r) {
     if (r.password() == null || r.password().isBlank()) throw new BusinessException(400, "La contraseña es obligatoria para crear usuarios");
-    AppUser u = new AppUser(); u.username = r.username().trim().toLowerCase(); u.nombre = r.nombre().trim(); u.email = blank(r.email()); u.rol = r.rol();
+    AppUser u = new AppUser(); u.username = r.username().trim().toLowerCase(); u.nombre = r.nombre().trim(); u.email = blank(r.email()); u.rol = rolActivo(r.rolId());
     u.activo = r.activo() == null || r.activo(); u.passwordHash = encoder.encode(r.password());
     db.persist(u); audit("CONFIG", "USERS", u.username); return user(u);
   }
   public UserResponse updateUser(UUID id, UserRequest r) {
     AppUser u = db.get(AppUser.class, id);
-    boolean removesLastAdmin = u.rol == Role.ADMINISTRACION && (r.rol() != Role.ADMINISTRACION || Boolean.FALSE.equals(r.activo())) && activeAdminCount() <= 1;
+    Rol nuevoRol = rolActivo(r.rolId());
+    boolean removesLastAdmin = esAdministrador(u.rol) && (!esAdministrador(nuevoRol) || Boolean.FALSE.equals(r.activo())) && activeAdminCount() <= 1;
     if (removesLastAdmin) throw new BusinessException(409, "Debe existir al menos un administrador activo");
-    u.username = r.username().trim().toLowerCase(); u.nombre = r.nombre().trim(); u.email = blank(r.email()); u.rol = r.rol(); if (r.activo() != null) u.activo = r.activo(); if (r.password() != null && !r.password().isBlank()) u.passwordHash = encoder.encode(r.password()); audit("CONFIG", "USERS", u.username); return user(u);
+    u.username = r.username().trim().toLowerCase(); u.nombre = r.nombre().trim(); u.email = blank(r.email()); u.rol = nuevoRol; if (r.activo() != null) u.activo = r.activo(); if (r.password() != null && !r.password().isBlank()) u.passwordHash = encoder.encode(r.password()); audit("CONFIG", "USERS", u.username); return user(u);
   }
-  public void deleteUser(UUID id) { AppUser u = db.get(AppUser.class, id); if (u.id.equals(actorId())) throw new BusinessException(409, "No puede eliminarse a sí mismo"); if (u.rol == Role.ADMINISTRACION && u.activo && activeAdminCount() <= 1) throw new BusinessException(409, "No puede eliminarse el último administrador activo"); deleted(u); audit("CONFIG", "USERS", "eliminar"); }
-  private long activeAdminCount() { return db.count("select count(u) from AppUser u where u.rol=:role and u.activo=true and u.deletedAt is null", Map.of("role", Role.ADMINISTRACION)); }
+  public void deleteUser(UUID id) { AppUser u = db.get(AppUser.class, id); if (u.id.equals(actorId())) throw new BusinessException(409, "No puede eliminarse a sí mismo"); if (esAdministrador(u.rol) && u.activo && activeAdminCount() <= 1) throw new BusinessException(409, "No puede eliminarse el último administrador activo"); deleted(u); audit("CONFIG", "USERS", "eliminar"); }
+  private long activeAdminCount() { return db.count("select count(u) from AppUser u where u.rol.codigo=:codigo and u.activo=true and u.deletedAt is null", Map.of("codigo", Permisos.CODIGO_ADMINISTRACION)); }
+  private boolean esAdministrador(Rol rol) { return Permisos.CODIGO_ADMINISTRACION.equals(rol.codigo); }
+  private Rol rolActivo(UUID id) { Rol rol = db.get(Rol.class, id); if (rol.deletedAt != null) throw new BusinessException(422, "El rol no existe o fue eliminado"); return rol; }
+
+  // ---------- Roles y permisos ----------
+  public List<PermisoModuloResponse> permisosCatalogo() {
+    return Permisos.CATALOGO.stream().map(m -> new PermisoModuloResponse(m.id(), m.nombre(), m.permisos().stream().map(x -> new PermisoItemResponse(x.codigo(), x.etiqueta())).toList())).toList();
+  }
+  public List<RolResponse> roles(boolean includeDeleted) {
+    return db.all("select r from Rol r where 1=1" + (includeDeleted ? "" : " and r.deletedAt is null") + " order by r.nombre", Rol.class, Map.of()).stream().map(this::rol).toList();
+  }
+  private RolResponse rol(Rol e) {
+    long usuarios = db.count("select count(u) from AppUser u where u.rol.id=:rol and u.deletedAt is null", Map.of("rol", e.id));
+    return new RolResponse(e.id, e.codigo, e.nombre, e.descripcion, e.sistema, !esAdministrador(e), usuarios, e.permisos.stream().sorted().toList(), e.updatedAt);
+  }
+  public RolResponse createRol(RolRequest r) {
+    Rol e = new Rol();
+    e.codigo = "PERSONALIZADO_" + UUID.randomUUID().toString().substring(0, 8).toUpperCase();
+    e.nombre = validarNombreRol(r.nombre(), null); e.descripcion = blank(r.descripcion()); e.sistema = false;
+    e.permisos.addAll(validarPermisos(r.permisos()));
+    db.persist(e); audit("ROLES", "CREAR", e.nombre); return rol(e);
+  }
+  public RolResponse updateRol(UUID id, RolRequest r) {
+    Rol e = db.get(Rol.class, id);
+    if (e.deletedAt != null) throw new NotFoundException("El rol no existe");
+    if (esAdministrador(e)) throw new BusinessException(409, "El rol Administración no se puede modificar");
+    e.nombre = validarNombreRol(r.nombre(), e.id); e.descripcion = blank(r.descripcion());
+    Set<String> permisos = validarPermisos(r.permisos());
+    e.permisos.clear(); e.permisos.addAll(permisos);
+    audit("ROLES", "EDITAR", e.nombre); return rol(e);
+  }
+  public void deleteRol(UUID id) {
+    Rol e = db.get(Rol.class, id);
+    if (esAdministrador(e) || e.sistema) throw new BusinessException(409, "Los roles de sistema no se pueden eliminar");
+    if (db.count("select count(u) from AppUser u where u.rol.id=:rol and u.deletedAt is null", Map.of("rol", e.id)) > 0) throw new BusinessException(409, "Hay usuarios con este rol. Asignales otro rol antes de eliminarlo");
+    deleted(e); audit("ROLES", "ELIMINAR", e.nombre);
+  }
+  private String validarNombreRol(String nombre, UUID excluir) {
+    String limpio = nombre == null ? "" : nombre.trim();
+    if (limpio.isEmpty()) throw new BusinessException(400, "El nombre del rol es obligatorio");
+    long repetidos = excluir == null
+        ? db.count("select count(r) from Rol r where lower(r.nombre)=:nombre and r.deletedAt is null", Map.of("nombre", limpio.toLowerCase()))
+        : db.count("select count(r) from Rol r where lower(r.nombre)=:nombre and r.deletedAt is null and r.id<>:id", Map.of("nombre", limpio.toLowerCase(), "id", excluir));
+    if (repetidos > 0) throw new BusinessException(409, "Ya existe un rol con ese nombre");
+    return limpio;
+  }
+  private Set<String> validarPermisos(List<String> permisos) {
+    Set<String> set = new LinkedHashSet<>(permisos == null ? List.of() : permisos);
+    for (String codigo : set) if (!Permisos.esValido(codigo)) throw new BusinessException(400, "Permiso desconocido: " + codigo);
+    return set;
+  }
 
   // ---------- Auditoría / reportes / dashboard ----------
   public PageResponse<AuditResponse> audits(String q, UUID registrarId, String modulo, String accion, Instant desde, Instant hasta, int page, int size) {

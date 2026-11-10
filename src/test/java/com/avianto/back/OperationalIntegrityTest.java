@@ -118,6 +118,13 @@ class OperationalIntegrityTest {
     assertEquals(LocalDate.of(2026, 9, 30), api.nextServices().get(0).proximaFecha());
   }
 
+  private static Rol rolDeSistema(String codigo) {
+    Rol rol = new Rol();
+    rol.id = UUID.randomUUID(); rol.codigo = codigo; rol.nombre = codigo; rol.sistema = true;
+    rol.permisos.addAll(Permisos.TODOS);
+    return rol;
+  }
+
   private static ServiceMoto service(UUID id, Motovehiculo moto, int kilometraje, LocalDate fecha) {
     ServiceMoto s = new ServiceMoto();
     s.id = id; s.motovehiculo = moto; s.kilometraje = kilometraje; s.fecha = fecha;
@@ -398,7 +405,7 @@ class OperationalIntegrityTest {
 
   @Test
   void lastActiveAdminCannotBeDeleted() {
-    AppUser admin = new AppUser(); admin.rol = Role.ADMINISTRACION; admin.activo = true;
+    AppUser admin = new AppUser(); admin.rol = rolDeSistema(Permisos.CODIGO_ADMINISTRACION); admin.activo = true;
     when(db.get(AppUser.class, admin.id)).thenReturn(admin);
     when(db.count(anyString(), anyMap())).thenReturn(1L);
 

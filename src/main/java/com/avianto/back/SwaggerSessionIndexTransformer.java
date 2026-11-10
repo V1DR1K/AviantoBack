@@ -36,7 +36,7 @@ final class SwaggerSessionIndexTransformer implements SwaggerIndexTransformer {
         if (target.origin !== window.location.origin) return request;
         try {
           let session = JSON.parse(window.sessionStorage.getItem("avianto.session") || "null");
-          if (!session || session.user?.rol !== "ADMINISTRACION") return request;
+          if (!session || !session.user?.permisos?.includes("api.docs")) return request;
           let accessToken = session.accessToken;
           const encodedPayload = accessToken?.split(".")[1];
           if (encodedPayload) {
@@ -53,7 +53,7 @@ final class SwaggerSessionIndexTransformer implements SwaggerIndexTransformer {
               }
               session = await response.json();
               window.sessionStorage.setItem("avianto.session", JSON.stringify(session));
-              if (session.user?.rol !== "ADMINISTRACION") return request;
+              if (!session.user?.permisos?.includes("api.docs")) return request;
               accessToken = session.accessToken;
             }
           }

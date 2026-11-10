@@ -7,7 +7,6 @@ import java.math.BigDecimal;
 import java.time.*;
 import java.util.*;
 
-enum Role { ADMINISTRACION, OPERARIO }
 enum FichaState { PENDIENTE, EN_PROCESO, REVISION, TERMINADA, ENTREGADA, CANCELADA;
   static FichaState of(String v) { return switch (v) { case "Pendiente" -> PENDIENTE; case "En proceso" -> EN_PROCESO; case "En revisión", "Revisión" -> REVISION; case "Terminada" -> TERMINADA; case "Entregada" -> ENTREGADA; case "Cancelada" -> CANCELADA; default -> throw new BusinessException(422, "Estado inválido"); }; }
   String label() { return switch(this) { case PENDIENTE -> "Pendiente"; case EN_PROCESO -> "En proceso"; case REVISION -> "En revisión"; case TERMINADA -> "Terminada"; case ENTREGADA -> "Entregada"; case CANCELADA -> "Cancelada"; }; }
@@ -63,7 +62,8 @@ enum VentaChecklistState { PENDIENTE, REALIZADO, NO_APLICA;
   @Column(name="deleted_by") UUID deletedBy;
   @PreUpdate void updateTimestamp() { updatedAt = Instant.now(); }
 }
-@Entity @Table(name="app_user") class AppUser extends BaseEntity { String nombre; String username; String email; @Column(name="password_hash") String passwordHash; @Enumerated(EnumType.STRING) Role rol; boolean activo=true; }
+@Entity @Table(name="app_user") class AppUser extends BaseEntity { String nombre; String username; String email; @Column(name="password_hash") String passwordHash; @ManyToOne(fetch=FetchType.EAGER,optional=false) @JoinColumn(name="rol_id",nullable=false) Rol rol; boolean activo=true; }
+@Entity @Table(name="rol") class Rol extends BaseEntity { @Column(nullable=false) String codigo; @Column(nullable=false) String nombre; String descripcion; boolean sistema; boolean activo=true; @ElementCollection(fetch=FetchType.EAGER) @CollectionTable(name="rol_permiso",joinColumns=@JoinColumn(name="rol_id")) @Column(name="permiso",nullable=false) Set<String> permisos=new HashSet<>(); }
 @Entity class MarcaMoto extends BaseEntity { String nombre; boolean activo=true; }
 @Entity class Cliente extends BaseEntity { String nombre; String documento; String telefono; String email; String direccion; @Column(columnDefinition="text") String observaciones; boolean activo=true; }
 @Entity class Motovehiculo extends BaseEntity { @ManyToOne(fetch=FetchType.EAGER,optional=false) @JoinColumn(name="marca_id",nullable=false) MarcaMoto marca; @Column(name="imagen_actualizada_at") Instant imagenActualizadaAt; String modelo; String patente; Integer anio; Integer kilometraje; @Enumerated(EnumType.STRING) MotoSection seccion; @Enumerated(EnumType.STRING) @Column(name="estado_operativo",nullable=false) MotoState estadoOperativo=MotoState.DISPONIBLE; boolean ingresada=false; @Column(name="km_ultimo_service") Integer kmUltimoService; @Column(name="fecha_ultimo_service") LocalDate fechaUltimoService; @Column(name="proximo_service_fecha") LocalDate proximoServiceFecha; @Column(name="km_service_periodo") Integer kmServicePeriodo=5000; @Column(name="meses_service_periodo") Integer mesesServicePeriodo=6; @Column(name="service_observaciones",columnDefinition="text") String serviceObservaciones; @Column(columnDefinition="text") String observaciones; boolean activo=true; }

@@ -36,7 +36,7 @@ class SwaggerSessionIndexTransformerTest {
 
     assertTrue(javascript.contains("requestInterceptor"));
     assertTrue(javascript.contains("avianto.session"));
-    assertTrue(javascript.contains("ADMINISTRACION"));
+    assertTrue(javascript.contains("permisos?.includes(\"api.docs\")"));
     assertTrue(javascript.contains("target.origin !== window.location.origin"));
     assertTrue(javascript.contains("url: \"/v3/api-docs\""));
     assertFalse(javascript.contains("petstore.swagger.io"));
