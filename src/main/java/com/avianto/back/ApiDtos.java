@@ -17,7 +17,7 @@ public final class ApiDtos {
   public record UserRequest(@NotBlank String username, @NotBlank String nombre, @Email String email, @NotNull Role rol, Boolean activo, @Size(min=8,max=100) String password) {}
   public record UserResponse(UUID id, String nombre, String email, Role rol, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record MotorcycleRequest(UUID clienteId, @NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones) {}
-  public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
+  public record MotorcycleResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, LocalDate proximoServiceFecha, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
   public record ProfileRequest(@NotNull UUID marcaId, @NotBlank String modelo, @NotBlank String patente, @Min(1900) @Max(2100) Integer anio, @PositiveOrZero Integer kilometraje, String observaciones, UUID clienteId, String clienteNombre, String clienteDocumento, String clienteTelefono) {}
   public record ProfileResponse(UUID id, UUID propietarioId, String propietario, UUID marcaId, String marca, String modelo, String patente, Integer anio, Integer kilometraje, String seccion, boolean ingresada, String estado, Integer kmUltimoService, LocalDate fechaUltimoService, Integer kmServicePeriodo, Integer mesesServicePeriodo, String serviceObservaciones, String observaciones, boolean activo, Instant createdAt, Instant updatedAt, Instant imagenActualizadaAt) {}
   public record VehicleImageRequest(@Size(max=255) String filename, @NotBlank @Size(max=40) String contentType, @NotBlank String miniaturaBase64, @NotBlank String completaBase64, @NotNull @Positive Integer width, @NotNull @Positive Integer height) {}
@@ -30,15 +30,20 @@ public final class ApiDtos {
     @PositiveOrZero private Integer mesesServicePeriodo;
     private String serviceObservaciones;
     private boolean serviceObservacionesPresent;
+    private LocalDate proximoServiceFecha;
+    private boolean proximoServiceFechaPresent;
 
     public MotoConfigServiceRequest() {}
     @JsonSetter("kmServicePeriodo") public void setKmServicePeriodo(Integer value) { kmServicePeriodo = value; }
     @JsonSetter("mesesServicePeriodo") public void setMesesServicePeriodo(Integer value) { mesesServicePeriodo = value; }
     @JsonSetter("serviceObservaciones") public void setServiceObservaciones(String value) { serviceObservaciones = value; serviceObservacionesPresent = true; }
+    @JsonSetter("proximoServiceFecha") public void setProximoServiceFecha(LocalDate value) { proximoServiceFecha = value; proximoServiceFechaPresent = true; }
     public Integer kmServicePeriodo() { return kmServicePeriodo; }
     public Integer mesesServicePeriodo() { return mesesServicePeriodo; }
     public String serviceObservaciones() { return serviceObservaciones; }
     public boolean serviceObservacionesPresent() { return serviceObservacionesPresent; }
+    public LocalDate proximoServiceFecha() { return proximoServiceFecha; }
+    public boolean proximoServiceFechaPresent() { return proximoServiceFechaPresent; }
   }
   public record TransferUpdateRequest(@NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
   public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo) {}

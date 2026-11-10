@@ -102,6 +102,22 @@ class OperationalIntegrityTest {
     verify(db, never()).all(contains("ServiceMoto"), eq(ServiceMoto.class), anyMap());
   }
 
+  @Test
+  void manualNextServiceDateOverridesCalculatedDateInNextServices() throws Exception {
+    UUID motoId = UUID.randomUUID();
+    Motovehiculo moto = moto(motoId);
+    moto.fechaUltimoService = LocalDate.of(2026, 1, 10); moto.mesesServicePeriodo = 6; moto.kmServicePeriodo = 5000; moto.kilometraje = 1000;
+    when(db.get(Motovehiculo.class, motoId)).thenReturn(moto);
+    when(db.all(contains("Motovehiculo"), eq(Motovehiculo.class), anyMap())).thenReturn(List.of(moto));
+    ApiDtos.MotoConfigServiceRequest request = new ObjectMapper().findAndRegisterModules()
+        .readValue("{\"proximoServiceFecha\":\"2026-09-30\"}", ApiDtos.MotoConfigServiceRequest.class);
+
+    api.updateMotoConfig(motoId, request);
+
+    assertEquals(LocalDate.of(2026, 9, 30), moto.proximoServiceFecha);
+    assertEquals(LocalDate.of(2026, 9, 30), api.nextServices().get(0).proximaFecha());
+  }
+
   private static ServiceMoto service(UUID id, Motovehiculo moto, int kilometraje, LocalDate fecha) {
     ServiceMoto s = new ServiceMoto();
     s.id = id; s.motovehiculo = moto; s.kilometraje = kilometraje; s.fecha = fecha;

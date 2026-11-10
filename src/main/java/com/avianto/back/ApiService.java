@@ -220,6 +220,7 @@ public class ApiService {
     if (r.kmServicePeriodo() != null) e.kmServicePeriodo = r.kmServicePeriodo();
     if (r.mesesServicePeriodo() != null) e.mesesServicePeriodo = r.mesesServicePeriodo();
     if (r.serviceObservacionesPresent()) e.serviceObservaciones = blank(r.serviceObservaciones());
+    if (r.proximoServiceFechaPresent()) e.proximoServiceFecha = r.proximoServiceFecha();
     audit("Motovehículos", "CONFIG SERVICE", e.patente); return moto(e);
   }
   private void copy(MotorcycleRequest r, Motovehiculo e) {
@@ -233,7 +234,7 @@ public class ApiService {
 
   private MotorcycleResponse moto(Motovehiculo e) {
     PropietarioMoto o = propietarioActual(e.id);
-    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt, e.imagenActualizadaAt);
+    return new MotorcycleResponse(e.id, o == null ? null : o.cliente.id, o == null ? null : o.cliente.nombre, e.marca.id, e.marca.nombre, e.modelo, e.patente, e.anio, e.kilometraje, e.seccion == null ? null : e.seccion.label(), e.ingresada, estadoMoto(e), e.kmUltimoService, e.fechaUltimoService, e.proximoServiceFecha, e.kmServicePeriodo, e.mesesServicePeriodo, e.serviceObservaciones, e.observaciones, e.activo, e.createdAt, e.updatedAt, e.imagenActualizadaAt);
   }
   private ProfileResponse profile(Motovehiculo e) {
     PropietarioMoto o = propietarioActual(e.id);
@@ -492,6 +493,8 @@ public class ApiService {
       m.kmUltimoService = e.kilometraje; m.fechaUltimoService = e.fecha;
     }
     if (m.kilometraje == null || e.kilometraje > m.kilometraje) m.kilometraje = e.kilometraje;
+    // Un service nuevo inicia un ciclo nuevo: la fecha manual anterior deja de aplicar y vuelve el cálculo automático.
+    m.proximoServiceFecha = null;
     audit("Services", "REGISTRAR", m.patente + " km " + e.kilometraje);
     return service(e);
   }
@@ -526,10 +529,11 @@ PropietarioMoto o = propietarioActual(m.id);
       Integer proxKm = base == null ? null : base + perKm;
       int kmFaltan = proxKm == null ? 0 : Math.max(0, proxKm - (m.kilometraje == null ? 0 : m.kilometraje));
       boolean atrasadoKm = proxKm != null && m.kilometraje != null && m.kilometraje >= proxKm;
-      LocalDate proxFecha = m.fechaUltimoService == null ? null : m.fechaUltimoService.plusMonths(perM);
+      // La fecha cargada a mano tiene prioridad sobre la calculada desde el último service.
+      LocalDate proxFecha = m.proximoServiceFecha != null ? m.proximoServiceFecha : m.fechaUltimoService == null ? null : m.fechaUltimoService.plusMonths(perM);
       Long diasFaltan = proxFecha == null ? null : ChronoUnit.DAYS.between(h, proxFecha);
       boolean atrasadoFecha = proxFecha != null && proxFecha.isBefore(h);
-      boolean sinRef = m.kmUltimoService == null && m.fechaUltimoService == null;
+      boolean sinRef = m.kmUltimoService == null && m.fechaUltimoService == null && m.proximoServiceFecha == null;
       return new NextServiceResponse(m.id, m.patente, o == null ? null : o.cliente.nombre, m.marca.nombre + " " + m.modelo, m.kilometraje, m.kmUltimoService, m.fechaUltimoService, m.kmServicePeriodo, m.mesesServicePeriodo, proxKm, kmFaltan, proxFecha, diasFaltan, atrasadoKm, atrasadoFecha, sinRef);
     }).toList();
   }
