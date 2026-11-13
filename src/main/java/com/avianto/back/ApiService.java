@@ -58,7 +58,7 @@ public class ApiService {
   public PageResponse<ClientResponse> clients(String q, Boolean activo, boolean deleted, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String w = " where 1=1" + active(deleted);
-    if (q != null && !q.isBlank()) { w += " and (lower(e.nombre) like :q or lower(coalesce(e.documento,'')) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and (" + SearchNormalizer.jpql("e.nombre") + " like :q or " + SearchNormalizer.jpql("coalesce(e.documento,'')") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (activo != null) { w += " and e.activo=:a"; ps.put("a", activo); }
     return page("from Cliente e", w, "from Cliente e", ps, page, size, sortable(sort, Set.of("nombre", "createdAt", "updatedAt"), "nombre"), dir, x -> client((Cliente) x));
   }
@@ -81,8 +81,7 @@ public class ApiService {
     return new ClientResponse(e.id, e.nombre, e.documento, e.telefono, e.email, e.direccion, e.observaciones, e.activo, motos, fichas, e.createdAt, e.updatedAt);
   }
   @Cacheable(value = "autocomplete", key = "'clients:' + #q") public List<AutocompleteResponse> clientAutocomplete(String q) {
-    String query = q == null ? "" : q.trim().toLowerCase();
-    return db.all("select e from Cliente e where e.deletedAt is null and e.activo=true and (lower(e.nombre) like :q or lower(coalesce(e.documento,'')) like :q or lower(coalesce(e.telefono,'')) like :q) order by e.nombre", Cliente.class, Map.of("q", "%" + query + "%")).stream().map(e -> new AutocompleteResponse(e.id, e.nombre, e.documento == null ? e.telefono : e.documento)).toList();
+    return db.all("select e from Cliente e where e.deletedAt is null and e.activo=true and (" + SearchNormalizer.jpql("e.nombre") + " like :q or " + SearchNormalizer.jpql("coalesce(e.documento,'')") + " like :q or " + SearchNormalizer.jpql("coalesce(e.telefono,'')") + " like :q) order by e.nombre", Cliente.class, Map.of("q", SearchNormalizer.likePattern(q))).stream().map(e -> new AutocompleteResponse(e.id, e.nombre, e.documento == null ? e.telefono : e.documento)).toList();
   }
   @CacheEvict(value = "autocomplete", allEntries = true) void clearAutocomplete() {}
 
@@ -90,7 +89,7 @@ public class ApiService {
   public PageResponse<MotorcycleResponse> motorcycles(String q, UUID clientId, UUID brandId, String estado, Boolean activo, boolean deleted, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String w = " where 1=1" + active(deleted);
-    if (q != null && !q.isBlank()) { w += " and (lower(e.modelo) like :q or lower(e.patente) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and (" + SearchNormalizer.jpql("e.modelo") + " like :q or " + SearchNormalizer.jpql("e.patente") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (clientId != null) { w += " and e.id in (select o.motovehiculo.id from PropietarioMoto o where o.cliente.id=:c and o.fechaHasta is null and o.deletedAt is null)"; ps.put("c", clientId); }
     if (brandId != null) { w += " and e.marca.id=:brand"; ps.put("brand", brandId); }
     if (estado != null && !estado.isBlank()) {
@@ -106,16 +105,17 @@ public class ApiService {
   public MotorcycleResponse moto(UUID id) { return moto(db.get(Motovehiculo.class, id)); }
   public PageResponse<ProfileResponse> profiles(String q, String dominio, String motoQuery, String clienteQuery, String estado, int page, int size, String sort, String dir) {
     if (page < 0 || !(size == 10 || size == 20 || size == 50 || size == 100)) throw new BusinessException(400, "Paginación inválida");
-    String query = q == null ? "" : q.trim().toLowerCase();
+    String query = SearchNormalizer.normalize(q);
+    String queryPlate = plateKey(q);
     String domain = plateKey(dominio);
-    String vehicle = motoQuery == null ? "" : motoQuery.trim().toLowerCase();
-    String client = clienteQuery == null ? "" : clienteQuery.trim().toLowerCase();
+    String vehicle = SearchNormalizer.normalize(motoQuery);
+    String client = SearchNormalizer.normalize(clienteQuery);
     List<ProfileResponse> all = db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true order by e.patente", Motovehiculo.class, Map.of()).stream()
       .map(this::profile)
-      .filter(item -> query.isBlank() || plateKey(item.patente()).contains(plateKey(query)) || item.modelo().toLowerCase().contains(query) || (item.propietario() != null && item.propietario().toLowerCase().contains(query)))
+      .filter(item -> query.isBlank() || (!queryPlate.isBlank() && plateKey(item.patente()).contains(queryPlate)) || SearchNormalizer.normalize(item.modelo()).contains(query) || (item.propietario() != null && SearchNormalizer.normalize(item.propietario()).contains(query)))
       .filter(item -> domain.isBlank() || plateKey(item.patente()).contains(domain))
-      .filter(item -> vehicle.isBlank() || (item.marca() + " " + item.modelo()).toLowerCase().contains(vehicle))
-      .filter(item -> client.isBlank() || (item.propietario() != null && item.propietario().toLowerCase().contains(client)))
+      .filter(item -> vehicle.isBlank() || SearchNormalizer.normalize(item.marca() + " " + item.modelo()).contains(vehicle))
+      .filter(item -> client.isBlank() || (item.propietario() != null && SearchNormalizer.normalize(item.propietario()).contains(client)))
       .filter(item -> estado == null || estado.isBlank() || item.estado().equalsIgnoreCase(estado))
       .toList();
     String selectedSort = sortable(sort, Set.of("patente", "modelo", "estado", "createdAt", "updatedAt"), "patente");
@@ -267,7 +267,7 @@ public class ApiService {
     audit("VENTAS", "CREAR FICHA", ficha.numero + " · " + moto.patente);
   }
   @Cacheable(value = "autocomplete", key = "'motorcycles:' + #q") public List<AutocompleteResponse> motorcycleAutocomplete(String q) {
-    return db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and (lower(e.modelo) like lower(:q) or lower(e.patente) like lower(:q)) order by e.patente", Motovehiculo.class, Map.of("q", "%" + q.toLowerCase() + "%")).stream().limit(15).map(e -> new AutocompleteResponse(e.id, e.patente, e.marca.nombre + " " + e.modelo)).toList();
+    return db.all("select e from Motovehiculo e join e.marca where e.deletedAt is null and e.activo=true and (" + SearchNormalizer.jpql("e.modelo") + " like :q or " + SearchNormalizer.jpql("e.patente") + " like :q) order by e.patente", Motovehiculo.class, Map.of("q", SearchNormalizer.likePattern(q))).stream().limit(15).map(e -> new AutocompleteResponse(e.id, e.patente, e.marca.nombre + " " + e.modelo)).toList();
   }
 
   // ---------- Propietarios (toda la historia; actual = fechaHasta null) ----------
@@ -287,7 +287,7 @@ public class ApiService {
   public PageResponse<TransferResponse> transfers(String q, LocalDate desde, LocalDate hasta, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String where = " where e.deletedAt is null";
-    if (q != null && !q.isBlank()) { where += " and (lower(e.motovehiculo.patente) like lower(:q) or lower(e.clienteAnterior.nombre) like lower(:q) or lower(e.clienteNuevo.nombre) like lower(:q) or lower(coalesce(f.numero,'')) like lower(:q))"; ps.put("q", "%" + q.trim() + "%"); }
+    if (q != null && !q.isBlank()) { where += " and (" + SearchNormalizer.jpql("e.motovehiculo.patente") + " like :q or " + SearchNormalizer.jpql("e.clienteAnterior.nombre") + " like :q or " + SearchNormalizer.jpql("e.clienteNuevo.nombre") + " like :q or " + SearchNormalizer.jpql("coalesce(f.numero,'')") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (desde != null) { where += " and (e.fechaTransferencia>=:desde or (e.fechaTransferencia is null and e.createdAt>=:desdeCreada))"; ps.put("desde", desde); ps.put("desdeCreada", desde.atStartOfDay(ARGENTINA).toInstant()); }
     if (hasta != null) { where += " and (e.fechaTransferencia<=:hasta or (e.fechaTransferencia is null and e.createdAt<:hastaCreada))"; ps.put("hasta", hasta); ps.put("hastaCreada", hasta.plusDays(1).atStartOfDay(ARGENTINA).toInstant()); }
     return page("from TransferenciaMoto e join e.motovehiculo join e.clienteAnterior join e.clienteNuevo left join e.fichaVenta f", where, "from TransferenciaMoto e left join e.fichaVenta f", ps, page, size, sortable(sort, Set.of("fechaTransferencia", "createdAt"), "fechaTransferencia"), dir, x -> transfer((TransferenciaMoto) x));
@@ -312,7 +312,7 @@ public class ApiService {
   public PageResponse<VentaFichaResponse> ventaFichas(String q, UUID motoId, String estado, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String where = " where e.deletedAt is null";
-    if (q != null && !q.isBlank()) { where += " and (lower(e.numero) like :q or lower(e.motovehiculo.patente) like :q or lower(coalesce(e.comprador.nombre,'')) like :q)"; ps.put("q", "%" + q.trim().toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { where += " and (" + SearchNormalizer.jpql("e.numero") + " like :q or " + SearchNormalizer.jpql("e.motovehiculo.patente") + " like :q or " + SearchNormalizer.jpql("coalesce(e.comprador.nombre,'')") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (motoId != null) { where += " and e.motovehiculo.id=:moto"; ps.put("moto", motoId); }
     if (estado != null && !estado.isBlank()) {
       if ("Cancelada".equals(estado)) where += " and e.canceladaAt is not null";
@@ -542,10 +542,10 @@ PropietarioMoto o = propietarioActual(m.id);
   public PageResponse<FichaResponse> fichas(String q, UUID clienteId, UUID motoId, String patente, String estado, String estadoPago, LocalDate desde, LocalDate hasta, boolean deleted, int page, int size, String sort, String dir) {
     Map<String,Object> ps = p();
     String w = " where 1=1" + active(deleted);
-    if (q != null && !q.isBlank()) { w += " and (lower(e.numero) like :q or lower(e.cliente.nombre) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and (" + SearchNormalizer.jpql("e.numero") + " like :q or " + SearchNormalizer.jpql("e.cliente.nombre") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (clienteId != null) { w += " and e.cliente.id=:c"; ps.put("c", clienteId); }
     if (motoId != null) { w += " and e.motovehiculo.id=:m"; ps.put("m", motoId); }
-    if (patente != null && !patente.isBlank()) { w += " and lower(e.motovehiculo.patente) like :pat"; ps.put("pat", "%" + patente.toLowerCase() + "%"); }
+    if (patente != null && !patente.isBlank()) { w += " and " + SearchNormalizer.jpql("e.motovehiculo.patente") + " like :pat"; ps.put("pat", SearchNormalizer.likePattern(patente)); }
     if (estado != null && !estado.isBlank()) { w += " and e.estado=:s"; ps.put("s", FichaState.of(estado)); }
     if (estadoPago != null && !estadoPago.isBlank()) { w += " and e.estadoPago=:pag"; ps.put("pag", PagoState.of(estadoPago)); }
     if (desde != null) { w += " and e.fechaIngreso>=:desde"; ps.put("desde", desde); }
@@ -851,7 +851,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (estadoPago != null && !estadoPago.isBlank()) { w += " and e.estadoPago=:p"; ps.put("p", PagoState.of(estadoPago)); }
     if (motoId != null) { w += " and e.motovehiculo.id=:m"; ps.put("m", motoId); }
     if (clienteId != null) { w += " and e.cliente.id=:c"; ps.put("c", clienteId); }
-    if (q != null && !q.isBlank()) { w += " and (lower(e.numero) like :q or lower(coalesce(e.proveedor,'')) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and (" + SearchNormalizer.jpql("e.numero") + " like :q or " + SearchNormalizer.jpql("coalesce(e.proveedor,'')") + " like :q or " + SearchNormalizer.jpql("e.cliente.nombre") + " like :q or " + SearchNormalizer.jpql("e.motovehiculo.patente") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
     return page("from RepuestoPedido e join e.motovehiculo join e.cliente", w, "from RepuestoPedido e", ps, page, size, sortable(sort, Set.of("fecha", "createdAt", "total", "estado", "estadoPago"), "fecha"), dir, x -> repuesto((RepuestoPedido) x));
@@ -1103,13 +1103,12 @@ PropietarioMoto o = propietarioActual(m.id);
   public List<TrabajoCatalogoResponse> trabajos(String q, Boolean activo, boolean includeDeleted) {
     Map<String,Object> ps = p();
     String w = " where 1=1" + active(includeDeleted);
-    if (q != null && !q.isBlank()) { w += " and lower(e.descripcion) like :q"; ps.put("q", "%" + q.trim().toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and " + SearchNormalizer.jpql("e.descripcion") + " like :q"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (activo != null) { w += " and e.activo=:activo"; ps.put("activo", activo); }
     return db.all("select e from TrabajoCatalogo e" + w + " order by e.descripcion", TrabajoCatalogo.class, ps).stream().map(this::trabajo).toList();
   }
   public List<TrabajoCatalogoResponse> trabajosAutocomplete(String q) {
-    String query = q == null ? "" : q.trim().toLowerCase();
-    return db.list("select e from TrabajoCatalogo e where e.deletedAt is null and e.activo=true and lower(e.descripcion) like :q order by e.descripcion", TrabajoCatalogo.class, Map.of("q", "%" + query + "%"), 0, 15).stream().map(this::trabajo).toList();
+    return db.list("select e from TrabajoCatalogo e where e.deletedAt is null and e.activo=true and " + SearchNormalizer.jpql("e.descripcion") + " like :q order by e.descripcion", TrabajoCatalogo.class, Map.of("q", SearchNormalizer.likePattern(q)), 0, 15).stream().map(this::trabajo).toList();
   }
   public TrabajoCatalogoResponse createTrabajo(TrabajoCatalogoRequest r) { TrabajoCatalogo e = new TrabajoCatalogo(); copy(r, e); db.persist(e); audit("Configuración", "CREAR TRABAJO", e.descripcion); return trabajo(e); }
   public TrabajoCatalogoResponse updateTrabajoCatalogo(UUID id, TrabajoCatalogoRequest r) { TrabajoCatalogo e = db.get(TrabajoCatalogo.class, id); copy(r, e); audit("Configuración", "EDITAR TRABAJO", e.descripcion); return trabajo(e); }
@@ -1196,10 +1195,10 @@ PropietarioMoto o = propietarioActual(m.id);
   public PageResponse<AuditResponse> audits(String q, UUID registrarId, String modulo, String accion, Instant desde, Instant hasta, int page, int size) {
     Map<String,Object> ps = p();
     String w = " where 1=1";
-    if (q != null && !q.isBlank()) { w += " and (lower(e.descripcion) like :q or lower(e.accion) like :q)"; ps.put("q", "%" + q.toLowerCase() + "%"); }
+    if (q != null && !q.isBlank()) { w += " and (" + SearchNormalizer.jpql("e.descripcion") + " like :q or " + SearchNormalizer.jpql("e.accion") + " like :q)"; ps.put("q", SearchNormalizer.likePattern(q)); }
     if (registrarId != null) { w += " and e.usuario.id=:u"; ps.put("u", registrarId); }
-    if (modulo != null && !modulo.isBlank()) { w += " and lower(e.modulo) like lower(concat('%',:mod,'%'))"; ps.put("mod", modulo); }
-    if (accion != null && !accion.isBlank()) { w += " and lower(e.accion) like lower(concat('%',:act,'%'))"; ps.put("act", accion); }
+    if (modulo != null && !modulo.isBlank()) { w += " and " + SearchNormalizer.jpql("e.modulo") + " like :mod"; ps.put("mod", SearchNormalizer.likePattern(modulo)); }
+    if (accion != null && !accion.isBlank()) { w += " and " + SearchNormalizer.jpql("e.accion") + " like :act"; ps.put("act", SearchNormalizer.likePattern(accion)); }
     if (desde != null) { w += " and e.fecha>=:desde"; ps.put("desde", desde); }
     if (hasta != null) { w += " and e.fecha<=:hasta"; ps.put("hasta", hasta); }
     return page("from Auditoria e", w, "from Auditoria e", ps, page, size, "fecha", "DESC", x -> { Auditoria a = (Auditoria) x; return new AuditResponse(a.id, a.fecha, a.usuario == null ? null : a.usuario.nombre, a.modulo, a.accion, a.descripcion, a.entidad, a.entidadId, a.antes, a.despues, a.motivo, a.correlationId); });
