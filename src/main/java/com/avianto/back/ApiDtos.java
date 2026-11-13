@@ -51,8 +51,13 @@ public final class ApiDtos {
     public boolean proximoServiceFechaPresent() { return proximoServiceFechaPresent; }
   }
   public record TransferUpdateRequest(@NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
-  public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo) {}
-  public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt) {}
+  public enum TrabajoFichaAlcance { CERRADAS, ABIERTAS }
+  public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo, Set<TrabajoFichaAlcance> actualizarEnFichas) {
+    public TrabajoCatalogoRequest(String descripcion, BigDecimal precioBase, Boolean activo) { this(descripcion, precioBase, activo, null); }
+  }
+  public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt, long fichasActualizadas, long trabajosActualizados) {
+    public TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt) { this(id, descripcion, precioBase, activo, createdAt, updatedAt, 0, 0); }
+  }
   public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo, UUID id) {
     public FichaTrabajoRequest(String descripcion, BigDecimal precioUnitario, BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) { this(descripcion, precioUnitario, descuento, estadoTrabajo, observacionTrabajo, null); }
   }

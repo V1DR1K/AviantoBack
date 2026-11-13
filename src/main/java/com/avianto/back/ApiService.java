@@ -1111,7 +1111,49 @@ PropietarioMoto o = propietarioActual(m.id);
     return db.list("select e from TrabajoCatalogo e where e.deletedAt is null and e.activo=true and " + SearchNormalizer.jpql("e.descripcion") + " like :q order by e.descripcion", TrabajoCatalogo.class, Map.of("q", SearchNormalizer.likePattern(q)), 0, 15).stream().map(this::trabajo).toList();
   }
   public TrabajoCatalogoResponse createTrabajo(TrabajoCatalogoRequest r) { TrabajoCatalogo e = new TrabajoCatalogo(); copy(r, e); db.persist(e); audit("Configuración", "CREAR TRABAJO", e.descripcion); return trabajo(e); }
-  public TrabajoCatalogoResponse updateTrabajoCatalogo(UUID id, TrabajoCatalogoRequest r) { TrabajoCatalogo e = db.get(TrabajoCatalogo.class, id); copy(r, e); audit("Configuración", "EDITAR TRABAJO", e.descripcion); return trabajo(e); }
+  public TrabajoCatalogoResponse updateTrabajoCatalogo(UUID id, TrabajoCatalogoRequest r) {
+    TrabajoCatalogo e = db.getForUpdate(TrabajoCatalogo.class, id);
+    String descripcionAnterior = e.descripcion.trim();
+    BigDecimal precioAnterior = money(e.precioBase);
+    BigDecimal precioNuevo = money(r.precioBase());
+    boolean precioCambiado = precioAnterior.compareTo(precioNuevo) != 0;
+    Set<TrabajoFichaAlcance> alcances = r.actualizarEnFichas() == null ? Set.of() : Set.copyOf(r.actualizarEnFichas());
+    long fichasActualizadas = 0;
+    long trabajosActualizados = 0;
+
+    if (precioCambiado && !alcances.isEmpty()) {
+      Set<FichaState> estados = new HashSet<>();
+      if (alcances.contains(TrabajoFichaAlcance.CERRADAS)) estados.addAll(EnumSet.of(FichaState.TERMINADA, FichaState.ENTREGADA, FichaState.CANCELADA));
+      if (alcances.contains(TrabajoFichaAlcance.ABIERTAS)) estados.addAll(EnumSet.of(FichaState.PENDIENTE, FichaState.EN_PROCESO, FichaState.REVISION));
+      List<Ficha> fichas = db.all(
+          "select distinct f from Ficha f left join fetch f.trabajos where f.deletedAt is null and f.estado in :estados and f.id in (select t.ficha.id from FichaTrabajo t where lower(t.descripcion)=:descripcion)",
+          Ficha.class,
+          Map.of("estados", estados, "descripcion", descripcionAnterior.toLowerCase(Locale.ROOT)));
+      for (Ficha ficha : fichas) {
+        boolean actualizada = false;
+        for (FichaTrabajo trabajo : ficha.trabajos) {
+          if (!trabajo.descripcion.equalsIgnoreCase(descripcionAnterior)) continue;
+          BigDecimal subtotal = money(precioNuevo.subtract(money(trabajo.descuento)));
+          if (subtotal.signum() < 0) throw new BusinessException(409, "El nuevo precio es menor que el descuento aplicado en al menos una ficha");
+          trabajo.precioAplicado = precioNuevo;
+          trabajo.subtotal = subtotal;
+          trabajosActualizados++;
+          actualizada = true;
+        }
+        if (actualizada) {
+          recalc(ficha);
+          recalcFichaPayment(ficha);
+          fichasActualizadas++;
+        }
+      }
+    }
+
+    copy(r, e);
+    String alcanceAuditoria = alcances.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
+    String detalle = e.descripcion + "; fichas=" + fichasActualizadas + "; trabajos=" + trabajosActualizados + (alcanceAuditoria.isBlank() ? "" : "; alcance=" + alcanceAuditoria);
+    audit("Configuración", precioCambiado ? "ACTUALIZAR PRECIO" : "EDITAR TRABAJO", "Trabajo", e.id, precioAnterior.toPlainString(), precioNuevo.toPlainString(), alcanceAuditoria, detalle);
+    return new TrabajoCatalogoResponse(e.id, e.descripcion, e.precioBase, e.activo, e.createdAt, e.updatedAt, fichasActualizadas, trabajosActualizados);
+  }
   public void deleteTrabajoCatalogo(UUID id) { TrabajoCatalogo e = db.get(TrabajoCatalogo.class, id); deleted(e); audit("Configuración", "ELIMINAR TRABAJO", e.descripcion); }
   private void copy(TrabajoCatalogoRequest r, TrabajoCatalogo e) { e.descripcion = r.descripcion().trim(); e.precioBase = money(r.precioBase()); if (r.activo() != null) e.activo = r.activo(); }
   private TrabajoCatalogoResponse trabajo(TrabajoCatalogo e) { return new TrabajoCatalogoResponse(e.id, e.descripcion, e.precioBase, e.activo, e.createdAt, e.updatedAt); }
