@@ -107,6 +107,7 @@ public class ApiController {
   @GetMapping("/fichas/{id}/revision") @PreAuthorize("hasAuthority('PERM_fichas.ver')") public RevisionResponse revision(@PathVariable UUID id){return api.revision(id);}
   @PostMapping("/fichas/{id}/revision/preparar") @PreAuthorize("hasAuthority('PERM_fichas.editar')") public RevisionResponse prepararRevision(@PathVariable UUID id){return api.prepararRevision(id);}
   @PatchMapping("/fichas/{id}/revision/controles/{controlId}") @PreAuthorize("hasAuthority('PERM_revision.controlar')") public RevisionResponse revisionControl(@PathVariable UUID id,@PathVariable UUID controlId,@Valid @RequestBody RevisionControlRequest r){return api.updateControlEstado(id,controlId,r);}
+  @PostMapping("/fichas/{id}/revision/controles/marcar-todos") @PreAuthorize("hasAuthority('PERM_revision.controlar')") public RevisionResponse revisionControlesMarcarTodos(@PathVariable UUID id){return api.markAllControlsReviewed(id);}
   @PostMapping("/fichas/{id}/revision/aprobar") @PreAuthorize("hasAuthority('PERM_revision.aprobar')") public RevisionResponse aprobarRevision(@PathVariable UUID id,@Valid @RequestBody RevisionAprobarRequest r){return api.aprobarRevision(id,r);}
 
   // ---------- Pedidos de repuestos (piezas y accesorios) ----------
