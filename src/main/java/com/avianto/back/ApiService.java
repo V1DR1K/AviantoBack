@@ -1136,14 +1136,13 @@ PropietarioMoto o = propietarioActual(m.id);
     BigDecimal precioAnterior = money(e.precioBase);
     BigDecimal precioNuevo = money(r.precioBase());
     boolean precioCambiado = precioAnterior.compareTo(precioNuevo) != 0;
-    Set<TrabajoFichaAlcance> alcances = r.actualizarEnFichas() == null ? Set.of() : Set.copyOf(r.actualizarEnFichas());
+    TrabajoFichaAlcance alcance = r.alcanceFichas() == null ? TrabajoFichaAlcance.NO_MODIFICAR : r.alcanceFichas();
     long fichasActualizadas = 0;
     long trabajosActualizados = 0;
 
-    if (precioCambiado && !alcances.isEmpty()) {
-      Set<FichaState> estados = new HashSet<>();
-      if (alcances.contains(TrabajoFichaAlcance.CERRADAS)) estados.addAll(EnumSet.of(FichaState.TERMINADA, FichaState.ENTREGADA, FichaState.CANCELADA));
-      if (alcances.contains(TrabajoFichaAlcance.ABIERTAS)) estados.addAll(EnumSet.of(FichaState.PENDIENTE, FichaState.EN_PROCESO, FichaState.REVISION));
+    if (precioCambiado && alcance == TrabajoFichaAlcance.FICHAS_VIGENTES) {
+      // Pendiente, En proceso, En revisión y Terminada. Entregadas y canceladas nunca se modifican.
+      Set<FichaState> estados = EnumSet.of(FichaState.PENDIENTE, FichaState.EN_PROCESO, FichaState.REVISION, FichaState.TERMINADA);
       List<Ficha> fichas = db.all(
           "select distinct f from Ficha f left join fetch f.trabajos where f.deletedAt is null and f.estado in :estados and f.id in (select t.ficha.id from FichaTrabajo t where lower(t.descripcion)=:descripcion)",
           Ficha.class,
@@ -1168,7 +1167,7 @@ PropietarioMoto o = propietarioActual(m.id);
     }
 
     copy(r, e);
-    String alcanceAuditoria = alcances.stream().map(Enum::name).sorted().collect(Collectors.joining(","));
+    String alcanceAuditoria = alcance.name();
     String detalle = e.descripcion + "; fichas=" + fichasActualizadas + "; trabajos=" + trabajosActualizados + (alcanceAuditoria.isBlank() ? "" : "; alcance=" + alcanceAuditoria);
     audit("Configuración", precioCambiado ? "ACTUALIZAR PRECIO" : "EDITAR TRABAJO", "Trabajo", e.id, precioAnterior.toPlainString(), precioNuevo.toPlainString(), alcanceAuditoria, detalle);
     return new TrabajoCatalogoResponse(e.id, e.descripcion, e.precioBase, e.activo, e.createdAt, e.updatedAt, fichasActualizadas, trabajosActualizados);

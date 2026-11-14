@@ -51,8 +51,8 @@ public final class ApiDtos {
     public boolean proximoServiceFechaPresent() { return proximoServiceFechaPresent; }
   }
   public record TransferUpdateRequest(@NotNull UUID clienteNuevoId, @NotNull LocalDate fechaTransferencia, String observaciones) {}
-  public enum TrabajoFichaAlcance { CERRADAS, ABIERTAS }
-  public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo, Set<TrabajoFichaAlcance> actualizarEnFichas) {
+  public enum TrabajoFichaAlcance { NO_MODIFICAR, FICHAS_VIGENTES }
+  public record TrabajoCatalogoRequest(@NotBlank @Size(max=300) String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioBase, Boolean activo, TrabajoFichaAlcance alcanceFichas) {
     public TrabajoCatalogoRequest(String descripcion, BigDecimal precioBase, Boolean activo) { this(descripcion, precioBase, activo, null); }
   }
   public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt, long fichasActualizadas, long trabajosActualizados) {
