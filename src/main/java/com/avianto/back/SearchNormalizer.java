@@ -20,6 +20,6 @@ final class SearchNormalizer {
   }
 
   static String jpql(String property) {
-    return "function('unaccent', lower(" + property + "))";
+    return "cast(function('unaccent', lower(" + property + ")) as String)";
   }
 }
