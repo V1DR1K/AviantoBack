@@ -123,13 +123,13 @@ public final class ApiDtos {
   public record BillingMonthResponse(String mes, BigDecimal fichasTotal, BigDecimal repuestosCosto, BigDecimal repuestosVenta, BigDecimal repuestosGanancia, BigDecimal accesoriosCosto, BigDecimal accesoriosVenta, BigDecimal accesoriosGanancia, BigDecimal pedidosSinFichaVenta, BigDecimal pedidosSinFichaCosto) {}
   public record DashboardOrderResponse(UUID id, String numero, String cliente, String moto, String estado, BigDecimal total, Instant createdAt) {}
   public record DashboardResponse(LocalDate fechaDesde, LocalDate fechaHasta, long fichas, List<DashboardOrderResponse> recientes) {}
-  public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt) {}
+  public record TallerMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, UUID fichaId, String fichaNumero, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt, Integer anio) {}
   public record TallerEstadoResponse(String estado, List<TallerMotoResponse> motos) {}
   public record TallerResponse(List<TallerEstadoResponse> estados) {}
-  public record DashboardFichaResponse(UUID id, String numero, String cliente, String moto, String patente, String estado, BigDecimal total, LocalDate fechaIngreso, UUID motoId, Instant imagenActualizadaAt) {}
+  public record DashboardFichaResponse(UUID id, String numero, String cliente, String moto, String patente, String estado, BigDecimal total, LocalDate fechaIngreso, UUID motoId, Instant imagenActualizadaAt, Integer anio) {}
   public record DashboardFichaEstadoResponse(String estado, List<DashboardFichaResponse> fichas) {}
   public record DashboardFichasResponse(List<DashboardFichaEstadoResponse> estados) {}
-  public record VentaMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt) {}
+  public record VentaMotoResponse(UUID motoId, String patente, String moto, String cliente, Integer kilometraje, String estado, LocalDate fechaIngreso, Instant imagenActualizadaAt, Integer anio) {}
   public record VentaEstadoResponse(String estado, List<VentaMotoResponse> motos) {}
   public record VentaResponse(List<VentaEstadoResponse> estados) {}
   public record LoginRequest(@NotBlank String username, @NotBlank String password) {}

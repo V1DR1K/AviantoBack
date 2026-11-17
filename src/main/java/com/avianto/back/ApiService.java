@@ -1321,7 +1321,7 @@ PropietarioMoto o = propietarioActual(m.id);
       Ficha ficha = db.one("select f from Ficha f where f.motovehiculo.id=:moto and f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of("moto", moto.id));
       String state = estadoMoto(moto);
       if (!buckets.containsKey(state)) state = moto.ingresada ? "Ingresada Taller" : "Entregada";
-      buckets.get(state).add(new TallerMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, propietarioActual(moto.id) == null ? null : propietarioActual(moto.id).cliente.nombre, moto.kilometraje, ficha == null ? null : ficha.id, ficha == null ? null : ficha.numero, state, ficha == null ? null : ficha.fechaIngreso, moto.imagenActualizadaAt));
+      buckets.get(state).add(new TallerMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, propietarioActual(moto.id) == null ? null : propietarioActual(moto.id).cliente.nombre, moto.kilometraje, ficha == null ? null : ficha.id, ficha == null ? null : ficha.numero, state, ficha == null ? null : ficha.fechaIngreso, moto.imagenActualizadaAt, moto.anio));
     }
     List<TallerEstadoResponse> estados = buckets.entrySet().stream().map(entry -> new TallerEstadoResponse(entry.getKey(), entry.getValue().stream().limit(100).toList())).toList();
     return new TallerResponse(estados);
@@ -1329,7 +1329,7 @@ PropietarioMoto o = propietarioActual(m.id);
   public DashboardFichasResponse dashboardFichas() {
     Map<FichaState, List<DashboardFichaResponse>> buckets = new EnumMap<>(FichaState.class);
     for (Ficha f : db.all("select f from Ficha f where f.deletedAt is null order by f.fechaIngreso desc nulls last, f.createdAt desc", Ficha.class, Map.of())) {
-      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new DashboardFichaResponse(f.id, f.numero, f.cliente.nombre, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.motovehiculo.patente, f.estado.label(), f.total, f.fechaIngreso, f.motovehiculo.id, f.motovehiculo.imagenActualizadaAt));
+      buckets.computeIfAbsent(f.estado, k -> new ArrayList<>()).add(new DashboardFichaResponse(f.id, f.numero, f.cliente.nombre, f.motovehiculo.marca.nombre + " " + f.motovehiculo.modelo, f.motovehiculo.patente, f.estado.label(), f.total, f.fechaIngreso, f.motovehiculo.id, f.motovehiculo.imagenActualizadaAt, f.motovehiculo.anio));
     }
     List<DashboardFichaEstadoResponse> estados = Arrays.stream(FichaState.values()).map(s -> new DashboardFichaEstadoResponse(s.label(), buckets.getOrDefault(s, List.of()).stream().limit(100).toList())).toList();
     return new DashboardFichasResponse(estados);
@@ -1342,7 +1342,7 @@ PropietarioMoto o = propietarioActual(m.id);
       String state = estadoMoto(moto);
       if (!buckets.containsKey(state)) continue;
       PropietarioMoto owner = propietarioActual(moto.id);
-      buckets.get(state).add(new VentaMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, owner == null ? null : owner.cliente.nombre, moto.kilometraje, state, null, moto.imagenActualizadaAt));
+      buckets.get(state).add(new VentaMotoResponse(moto.id, moto.patente, moto.marca.nombre + " " + moto.modelo, owner == null ? null : owner.cliente.nombre, moto.kilometraje, state, null, moto.imagenActualizadaAt, moto.anio));
     }
     return new VentaResponse(buckets.entrySet().stream().map(entry -> new VentaEstadoResponse(entry.getKey(), entry.getValue().stream().limit(100).toList())).toList());
   }
