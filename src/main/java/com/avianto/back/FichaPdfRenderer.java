@@ -31,6 +31,8 @@ import java.math.RoundingMode;
 import java.text.DecimalFormat;
 import java.text.DecimalFormatSymbols;
 import java.time.LocalDate;
+import java.time.Instant;
+import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
@@ -83,7 +85,13 @@ final class FichaPdfRenderer {
     int workRow = 0;
     for (FichaTrabajoResponse trabajo : ficha.trabajos()) {
       Color rowSurface = workRow++ % 2 == 0 ? WHITE : SURFACE;
-      addBodyCell(trabajos, display(trabajo.descripcion()), rowSurface);
+      String description = display(trabajo.descripcion());
+      if ("USD".equals(trabajo.monedaOrigen()) && trabajo.precioOrigen() != null) {
+        description += "\nOrigen: " + foreignCurrency(trabajo.precioOrigen()) + " · cotización "
+            + display(trabajo.referenciaCotizacion()) + " " + currency(trabajo.cotizacionUsd())
+            + (trabajo.fechaCotizacion() == null ? "" : " · " + quoteDate(trabajo.fechaCotizacion()));
+      }
+      addBodyCell(trabajos, description, rowSurface);
       addBodyCell(trabajos, display(trabajo.estadoTrabajo()), rowSurface);
       addBodyCell(trabajos, currency(trabajo.precioUnitario()), rowSurface);
       addBodyCell(trabajos, currency(trabajo.descuento()), rowSurface);
@@ -349,6 +357,18 @@ final class FichaPdfRenderer {
     DecimalFormat format = new DecimalFormat("#,##0.00", symbols);
     format.setRoundingMode(RoundingMode.HALF_UP);
     return "$ " + format.format(value);
+  }
+
+  private static String foreignCurrency(BigDecimal amount) {
+    DecimalFormatSymbols symbols = DecimalFormatSymbols.getInstance(Locale.forLanguageTag("es-AR"));
+    DecimalFormat format = new DecimalFormat("#,##0.00", symbols);
+    format.setRoundingMode(RoundingMode.HALF_UP);
+    return "USD " + format.format(amount == null ? BigDecimal.ZERO : amount);
+  }
+
+  private static String quoteDate(Instant value) {
+    return DateTimeFormatter.ofPattern("dd/MM/yyyy HH:mm")
+        .withZone(ZoneId.of("America/Argentina/Buenos_Aires")).format(value);
   }
 
   private static String quantity(BigDecimal amount) {

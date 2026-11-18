@@ -14,7 +14,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 class RepuestoGananciaTest {
   private final DataRepository db = mock(DataRepository.class);
-  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class));
+  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class), mock(ExchangeRateService.class));
 
   @Test
   void newRepuestoItemsCarryTwentyPercentMarkupOnCost() {

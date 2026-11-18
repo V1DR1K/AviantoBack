@@ -46,6 +46,7 @@ final class Permisos {
           p("clientes.ver", "Ver"),
           p("clientes.crear", "Crear"),
           p("clientes.editar", "Editar"),
+          p("clientes.completar_datos", "Completar datos personales y de contacto"),
           p("clientes.eliminar", "Eliminar"))),
       new Modulo("motos", "Motos y perfiles", List.of(
           p("motos.ver", "Ver perfiles"),
@@ -63,6 +64,7 @@ final class Permisos {
           p("fichas.ver", "Ver"),
           p("fichas.crear", "Crear"),
           p("fichas.editar", "Editar ficha, trabajos y fotos"),
+          p("fichas.marcar_trabajos", "Marcar todos los trabajos realizados (solo Administración)"),
           p("fichas.estado", "Cambiar estado"),
           p("fichas.entregar", "Entregar moto"),
           p("fichas.eliminar", "Eliminar"))),

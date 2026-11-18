@@ -16,6 +16,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends wget ca-certifi
  && rm -rf /var/lib/apt/lists/* \
  && useradd --system --uid 10001 avianto \
  && mkdir /backups && chown avianto /backups
+ENV JAVA_TOOL_OPTIONS="-XX:MaxRAMPercentage=50.0"
 COPY --from=build /app/target/avianto-back-*.jar app.jar
 USER avianto
 ENV BACKUP_DIR=/backups

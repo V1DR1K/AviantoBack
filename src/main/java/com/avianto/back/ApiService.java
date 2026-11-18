@@ -1,6 +1,7 @@
 package com.avianto.back;
 
 import static com.avianto.back.ApiDtos.*;
+import jakarta.persistence.Tuple;
 import jakarta.transaction.Transactional;
 import org.springframework.cache.annotation.*;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -17,8 +18,8 @@ import org.slf4j.MDC;
 @Service
 @Transactional
 public class ApiService {
-  private final DataRepository db; private final PasswordEncoder encoder;
-  public ApiService(DataRepository db, PasswordEncoder encoder) { this.db = db; this.encoder = encoder; }
+  private final DataRepository db; private final PasswordEncoder encoder; private final ExchangeRateService exchangeRateService;
+  public ApiService(DataRepository db, PasswordEncoder encoder, ExchangeRateService exchangeRateService) { this.db = db; this.encoder = encoder; this.exchangeRateService = exchangeRateService; }
 
   private Map<String,Object> p() { return new HashMap<>(); }
   private UUID actorId() { try { return UUID.fromString(SecurityContextHolder.getContext().getAuthentication().getName()); } catch(Exception e) { return null; } }
@@ -63,6 +64,24 @@ public class ApiService {
     return page("from Cliente e", w, "from Cliente e", ps, page, size, sortable(sort, Set.of("nombre", "createdAt", "updatedAt"), "nombre"), dir, x -> client((Cliente) x));
   }
   public ClientResponse client(UUID id) { return client(db.get(Cliente.class, id)); }
+  public ClientCompletionResponse clientCompletion(UUID id) { Cliente e = db.get(Cliente.class, id); if (e.deletedAt != null) throw new BusinessException(409, "El cliente está eliminado"); return clientCompletion(e); }
+  public ClientCompletionResponse completeClientData(UUID id, ClientCompletionRequest request) {
+    Cliente e = db.get(Cliente.class, id);
+    if (e.deletedAt != null) throw new BusinessException(409, "El cliente está eliminado");
+    String documento = blank(request.documento());
+    if (documento != null) {
+      if (db.count("select count(e) from Cliente e where e.deletedAt is null and lower(e.documento)=:doc and e.id<>:id", Map.of("doc", documento.toLowerCase(Locale.ROOT), "id", e.id)) > 0) throw new BusinessException(409, "Ya existe un cliente con ese DNI");
+      e.documento = documento;
+    }
+    if (request.telefono() != null) e.telefono = blank(request.telefono());
+    if (request.email() != null) e.email = blank(request.email());
+    if (request.direccion() != null) e.direccion = blank(request.direccion());
+    if (request.observaciones() != null) e.observaciones = blank(request.observaciones());
+    audit("Clientes", "COMPLETAR DATOS", "Cliente", e.id, null, null, null, "clienteId=" + e.id + "; campos de contacto actualizados");
+    return clientCompletion(e);
+  }
+  private ClientCompletionResponse clientCompletion(Cliente e) { return new ClientCompletionResponse(e.id, e.nombre, e.documento, e.telefono, e.email, e.direccion, e.observaciones); }
+  public List<ExchangeRateResponse> exchangeRates() { return exchangeRateService.currentRates(); }
   public ClientResponse createClient(ClientRequest r) { Cliente e = new Cliente(); copy(r, e); db.persist(e); audit("Clientes", "CREAR", e.nombre); return client(e); }
   public ClientResponse updateClient(UUID id, ClientRequest r) { Cliente e = db.get(Cliente.class, id); copy(r, e); audit("Clientes", "EDITAR", e.nombre); return client(e); }
   public void deleteClient(UUID id) {
@@ -653,8 +672,46 @@ PropietarioMoto o = propietarioActual(m.id);
   }
   private void copyTrabajo(FichaTrabajo t, FichaTrabajoRequest r, boolean existing) {
     t.descripcion = r.descripcion().trim();
-    t.precioAplicado = money(r.precioUnitario());
-    t.descuento = money(r.descuento());
+    String moneda = blank(r.monedaOrigen());
+    moneda = moneda == null ? "ARS" : moneda.toUpperCase(Locale.ROOT);
+    if (!Set.of("ARS", "USD").contains(moneda)) throw new BusinessException(400, "Moneda de trabajo inválida");
+    if ("ARS".equals(moneda)) {
+      t.monedaOrigen = "ARS";
+      t.precioOrigen = money(r.precioUnitario());
+      t.descuentoOrigen = money(r.descuento());
+      t.precioAplicado = t.precioOrigen;
+      t.descuento = t.descuentoOrigen;
+      t.cotizacionUsd = null;
+      t.referenciaCotizacion = null;
+      t.fechaCotizacion = null;
+    } else {
+      if (r.precioOrigen() == null) throw new BusinessException(400, "Falta el importe original en dólares");
+      String reference = blank(r.referenciaCotizacion());
+      reference = reference == null ? null : reference.toUpperCase(Locale.ROOT);
+      BigDecimal originalPrice = money(r.precioOrigen());
+      BigDecimal originalDiscount = money(r.descuentoOrigen());
+      if (originalDiscount.compareTo(originalPrice) > 0) throw new BusinessException(400, "Descuento de línea inválido");
+      boolean preserveSnapshot = existing && "USD".equals(t.monedaOrigen)
+          && sameMoney(t.precioOrigen, originalPrice)
+          && sameMoney(t.descuentoOrigen, originalDiscount)
+          && Objects.equals(t.referenciaCotizacion, reference)
+          && t.cotizacionUsd != null && t.fechaCotizacion != null;
+      BigDecimal rate;
+      if (preserveSnapshot) {
+        rate = t.cotizacionUsd;
+      } else {
+        if (reference == null || !Set.of("OFICIAL", "BLUE", "MEP").contains(reference) || r.cotizacionUsd() == null || r.cotizacionUsd().signum() <= 0 || r.fechaCotizacion() == null) throw new BusinessException(400, "Falta una cotización USD válida");
+        rate = r.cotizacionUsd().setScale(6, RoundingMode.HALF_UP);
+        t.referenciaCotizacion = reference;
+        t.fechaCotizacion = r.fechaCotizacion();
+      }
+      t.monedaOrigen = "USD";
+      t.precioOrigen = originalPrice;
+      t.descuentoOrigen = originalDiscount;
+      t.cotizacionUsd = rate;
+      t.precioAplicado = money(originalPrice.multiply(rate));
+      t.descuento = money(originalDiscount.multiply(rate));
+    }
     t.subtotal = money(t.precioAplicado.subtract(t.descuento));
     if (t.subtotal.signum() < 0) throw new BusinessException(400, "Descuento de línea inválido");
     TrabajoState next = (r.estadoTrabajo() == null || r.estadoTrabajo().isBlank()) ? (existing ? t.estadoTrabajo : TrabajoState.PENDIENTE) : TrabajoState.of(r.estadoTrabajo());
@@ -664,6 +721,7 @@ PropietarioMoto o = propietarioActual(m.id);
     if (t.estadoTrabajo == TrabajoState.REALIZADO) { if (t.completadoAt == null) t.completadoAt = Instant.now(); if (t.completadoPor == null) t.completadoPor = actorId(); }
     else { t.completadoAt = null; t.completadoPor = null; }
   }
+  private static boolean sameMoney(BigDecimal left, BigDecimal right) { return left != null && right != null && left.compareTo(right) == 0; }
   private void recalc(Ficha e) {
     BigDecimal sum = e.trabajos.stream().filter(x -> x.estadoTrabajo != TrabajoState.CANCELADO).map(x -> x.subtotal).reduce(BigDecimal.ZERO, BigDecimal::add);
     sum = sum.subtract(e.descuentoGlobal);
@@ -685,7 +743,7 @@ PropietarioMoto o = propietarioActual(m.id);
   private void syncMotoAfterFichaCancellation(Ficha ficha) { ficha.motovehiculo.ingresada = false; ficha.motovehiculo.estadoOperativo = MotoState.ENTREGADA; touch(ficha.motovehiculo); }
   private boolean trabajosFinalizados(Ficha e) { return !e.trabajos.isEmpty() && e.trabajos.stream().allMatch(x -> x.estadoTrabajo == TrabajoState.REALIZADO || x.estadoTrabajo == TrabajoState.CANCELADO); }
   private FichaResponse ficha(Ficha e) {
-    List<FichaTrabajoResponse> lines = e.trabajos.stream().map(t -> new FichaTrabajoResponse(t.id, t.descripcion, t.precioAplicado, t.descuento, t.subtotal, t.estadoTrabajo.label(), t.observacionTrabajo, t.completadoAt, t.completadoPor)).toList();
+    List<FichaTrabajoResponse> lines = e.trabajos.stream().map(t -> new FichaTrabajoResponse(t.id, t.descripcion, t.precioAplicado, t.descuento, t.subtotal, t.estadoTrabajo.label(), t.observacionTrabajo, t.completadoAt, t.completadoPor, t.monedaOrigen, t.precioOrigen, t.descuentoOrigen, t.cotizacionUsd, t.referenciaCotizacion, t.fechaCotizacion)).toList();
     List<PhotoResponse> fotos = e.fotos.stream().map(f -> photo(e.id, f)).toList();
     BigDecimal cobrado = montoCobrado(e.pagos);
     return new FichaResponse(e.id, e.numero, e.cliente.id, e.motovehiculo.id, e.cliente.nombre, e.motovehiculo.marca.nombre + " " + e.motovehiculo.modelo, e.motovehiculo.patente, e.vencimiento, e.fechaIngreso, e.fechaEntregaEstimada, e.fechaEntregaReal, e.kilometrajeIngreso, e.observaciones, e.descuentoGlobal, e.iva, e.estado.label(), e.estadoPago.label(), e.total, cobrado, saldo(e.total, cobrado), e.createdAt, e.fechaCierre, lines, fotos);
@@ -715,6 +773,35 @@ PropietarioMoto o = propietarioActual(m.id);
     if (next == TrabajoState.PENDIENTE && e.estado == FichaState.REVISION) { e.estado = FichaState.EN_PROCESO; e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO; }
     audit("Fichas", "TRABAJO ESTADO", e.numero + " " + target.descripcion + " -> " + next.label());
     recalc(e); recalcFichaPayment(e);
+    return ficha(e);
+  }
+
+  public FichaResponse markAllTrabajosDone(UUID fichaId) {
+    AppUser usuario = actor();
+    if (usuario == null || !Permisos.CODIGO_ADMINISTRACION.equals(usuario.rol.codigo)) throw new BusinessException(403, "Solo Administración puede marcar todos los trabajos a la vez");
+    Ficha e = db.getForUpdate(Ficha.class, fichaId);
+    assertNotFinalized(e);
+    requireAtLeastOneTrabajo(e);
+    Instant completedAt = Instant.now();
+    int completed = 0;
+    for (FichaTrabajo trabajo : e.trabajos) {
+      if (trabajo.estadoTrabajo != TrabajoState.PENDIENTE) continue;
+      trabajo.estadoTrabajo = TrabajoState.REALIZADO;
+      trabajo.completadoAt = completedAt;
+      trabajo.completadoPor = usuario.id;
+      completed++;
+    }
+    if (completed > 0 && e.estado == FichaState.PENDIENTE) {
+      e.estado = FichaState.EN_PROCESO;
+      e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO;
+    }
+    if (completed > 0 && e.estado == FichaState.REVISION) {
+      e.estado = FichaState.EN_PROCESO;
+      e.motovehiculo.estadoOperativo = MotoState.EN_PROCESO;
+    }
+    audit("Fichas", "MARCAR TODOS LOS TRABAJOS", e.numero + "; completados=" + completed);
+    recalc(e);
+    recalcFichaPayment(e);
     return ficha(e);
   }
 
@@ -1129,6 +1216,18 @@ PropietarioMoto o = propietarioActual(m.id);
   public List<TrabajoCatalogoResponse> trabajosAutocomplete(String q) {
     return db.list("select e from TrabajoCatalogo e where e.deletedAt is null and e.activo=true and " + SearchNormalizer.jpql("e.descripcion") + " like :q order by e.descripcion", TrabajoCatalogo.class, Map.of("q", SearchNormalizer.likePattern(q)), 0, 15).stream().map(this::trabajo).toList();
   }
+  public List<TrabajoSugerenciaResponse> trabajosSugerencias() {
+    String normalized = SearchNormalizer.jpql("t.descripcion");
+    List<Tuple> matches = db.list(
+        "select min(t.descripcion), count(distinct f.id), count(t.id) from FichaTrabajo t join t.ficha f where f.deletedAt is null and f.estado <> com.avianto.back.FichaState.CANCELADA and t.estadoTrabajo <> com.avianto.back.TrabajoState.CANCELADO group by " + normalized + " having count(distinct f.id) >= 3 order by count(distinct f.id) desc, min(t.descripcion)",
+        Tuple.class, Map.of(), 0, 100);
+    Set<String> known = db.all("select e from TrabajoCatalogo e where e.deletedAt is null", TrabajoCatalogo.class, Map.of()).stream()
+        .map(e -> SearchNormalizer.normalize(e.descripcion)).collect(Collectors.toSet());
+    return matches.stream()
+        .map(row -> new TrabajoSugerenciaResponse(row.get(0, String.class), row.get(1, Long.class), row.get(2, Long.class)))
+        .filter(suggestion -> !known.contains(SearchNormalizer.normalize(suggestion.descripcion())))
+        .toList();
+  }
   public TrabajoCatalogoResponse createTrabajo(TrabajoCatalogoRequest r) { TrabajoCatalogo e = new TrabajoCatalogo(); copy(r, e); db.persist(e); audit("Configuración", "CREAR TRABAJO", e.descripcion); return trabajo(e); }
   public TrabajoCatalogoResponse updateTrabajoCatalogo(UUID id, TrabajoCatalogoRequest r) {
     TrabajoCatalogo e = db.getForUpdate(TrabajoCatalogo.class, id);
@@ -1155,6 +1254,12 @@ PropietarioMoto o = propietarioActual(m.id);
           if (subtotal.signum() < 0) throw new BusinessException(409, "El nuevo precio es menor que el descuento aplicado en al menos una ficha");
           trabajo.precioAplicado = precioNuevo;
           trabajo.subtotal = subtotal;
+          trabajo.monedaOrigen = "ARS";
+          trabajo.precioOrigen = precioNuevo;
+          trabajo.descuentoOrigen = money(trabajo.descuento);
+          trabajo.cotizacionUsd = null;
+          trabajo.referenciaCotizacion = null;
+          trabajo.fechaCotizacion = null;
           trabajosActualizados++;
           actualizada = true;
         }
@@ -1248,6 +1353,7 @@ PropietarioMoto o = propietarioActual(m.id);
   private Set<String> validarPermisos(List<String> permisos) {
     Set<String> set = new LinkedHashSet<>(permisos == null ? List.of() : permisos);
     for (String codigo : set) if (!Permisos.esValido(codigo)) throw new BusinessException(400, "Permiso desconocido: " + codigo);
+    if (set.contains("fichas.marcar_trabajos")) throw new BusinessException(403, "El permiso de marcar todos los trabajos queda reservado a Administración");
     return set;
   }
 

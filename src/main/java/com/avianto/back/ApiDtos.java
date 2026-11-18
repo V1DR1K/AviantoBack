@@ -12,6 +12,9 @@ public final class ApiDtos {
   public record PageResponse<T>(List<T> content, int page, int size, long totalElements, int totalPages, String sortBy, String direction) {}
   public record ClientRequest(@NotBlank String nombre, @NotBlank @Size(max=50) String documento, String telefono, @Email String email, String direccion, String observaciones) {}
   public record ClientResponse(UUID id, String nombre, String documento, String telefono, String email, String direccion, String observaciones, boolean activo, long motos, long fichas, Instant createdAt, Instant updatedAt) {}
+  public record ClientCompletionRequest(@Size(max=50) String documento, @Size(max=50) String telefono, @Email @Size(max=254) String email, @Size(max=500) String direccion, @Size(max=2000) String observaciones) {}
+  public record ClientCompletionResponse(UUID id, String nombre, String documento, String telefono, String email, String direccion, String observaciones) {}
+  public record ExchangeRateResponse(String codigo, String nombre, BigDecimal compra, BigDecimal venta, String fuente, Instant fechaActualizacion) {}
   public record NameRequest(@NotBlank @Size(max=120) String nombre, Boolean activo) {}
   public record NamedResponse(UUID id, String nombre, boolean activo, Instant createdAt, Instant updatedAt) {}
   public record UserRequest(@NotBlank String username, @NotBlank String nombre, @Email String email, @NotNull UUID rolId, Boolean activo, @Size(min=8,max=100) String password) {}
@@ -58,10 +61,12 @@ public final class ApiDtos {
   public record TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt, long fichasActualizadas, long trabajosActualizados) {
     public TrabajoCatalogoResponse(UUID id, String descripcion, BigDecimal precioBase, boolean activo, Instant createdAt, Instant updatedAt) { this(id, descripcion, precioBase, activo, createdAt, updatedAt, 0, 0); }
   }
-  public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo, UUID id) {
-    public FichaTrabajoRequest(String descripcion, BigDecimal precioUnitario, BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) { this(descripcion, precioUnitario, descuento, estadoTrabajo, observacionTrabajo, null); }
+  public record TrabajoSugerenciaResponse(String descripcion, long fichas, long usos) {}
+  public record FichaTrabajoRequest(@NotBlank String descripcion, @NotNull @DecimalMin("0.00") BigDecimal precioUnitario, @DecimalMin("0.00") BigDecimal descuento, String estadoTrabajo, String observacionTrabajo, UUID id, String monedaOrigen, @DecimalMin("0.00") BigDecimal precioOrigen, @DecimalMin("0.00") BigDecimal descuentoOrigen, @DecimalMin("0.000001") BigDecimal cotizacionUsd, String referenciaCotizacion, Instant fechaCotizacion) {
+    public FichaTrabajoRequest(String descripcion, BigDecimal precioUnitario, BigDecimal descuento, String estadoTrabajo, String observacionTrabajo) { this(descripcion, precioUnitario, descuento, estadoTrabajo, observacionTrabajo, null, null, null, null, null, null, null); }
+    public FichaTrabajoRequest(String descripcion, BigDecimal precioUnitario, BigDecimal descuento, String estadoTrabajo, String observacionTrabajo, UUID id) { this(descripcion, precioUnitario, descuento, estadoTrabajo, observacionTrabajo, id, null, null, null, null, null, null); }
   }
-  public record FichaTrabajoResponse(UUID id, String descripcion, BigDecimal precioUnitario, BigDecimal descuento, BigDecimal subtotal, String estadoTrabajo, String observacionTrabajo, Instant completadoAt, UUID completadoPor) {}
+  public record FichaTrabajoResponse(UUID id, String descripcion, BigDecimal precioUnitario, BigDecimal descuento, BigDecimal subtotal, String estadoTrabajo, String observacionTrabajo, Instant completadoAt, UUID completadoPor, String monedaOrigen, BigDecimal precioOrigen, BigDecimal descuentoOrigen, BigDecimal cotizacionUsd, String referenciaCotizacion, Instant fechaCotizacion) {}
   public record FichaRequest(@NotNull UUID clienteId, @NotNull UUID motoId, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, @PositiveOrZero Integer kilometrajeIngreso, LocalDate vencimiento, String observaciones, @NotNull @DecimalMin("0.00") BigDecimal descuentoGlobal, boolean iva, @Valid List<FichaTrabajoRequest> trabajos) {}
   public record FichaResponse(UUID id, String numero, UUID clienteId, UUID motoId, String cliente, String moto, String patente, LocalDate vencimiento, LocalDate fechaIngreso, LocalDate fechaEntregaEstimada, LocalDate fechaEntregaReal, Integer kilometrajeIngreso, String observaciones, BigDecimal descuentoGlobal, boolean iva, String estado, String estadoPago, BigDecimal total, BigDecimal montoCobrado, BigDecimal saldoPendiente, Instant creadoEn, Instant fechaCierre, List<FichaTrabajoResponse> trabajos, List<PhotoResponse> fotos) {}
   public record StateRequest(@NotBlank String estado) {}

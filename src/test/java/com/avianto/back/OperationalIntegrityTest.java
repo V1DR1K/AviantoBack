@@ -18,7 +18,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 
 class OperationalIntegrityTest {
   private final DataRepository db = mock(DataRepository.class);
-  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class));
+  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class), mock(ExchangeRateService.class));
 
   @Test
   void partialMotoConfigPreservesServiceObservationsWhenOmitted() throws Exception {
@@ -261,7 +261,7 @@ class OperationalIntegrityTest {
 
   @Test
   void photoIdempotencyReturnsTheExistingPhotoWithoutPersistingADuplicate() {
-    Ficha ficha = fichaParaPago("100.00");
+    Ficha ficha = fichaParaPago("100.00"); ficha.fechaCierre = java.time.Instant.now().plusSeconds(600);
     byte[] webp = new byte[]{'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
     FichaFoto existing = new FichaFoto(); existing.id = UUID.randomUUID(); existing.ficha = ficha; existing.filename = "photo.webp"; existing.contentType = "image/webp"; existing.content = webp;
     when(db.get(Ficha.class, ficha.id)).thenReturn(ficha);

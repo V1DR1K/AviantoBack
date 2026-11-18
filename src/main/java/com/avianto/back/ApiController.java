@@ -26,6 +26,8 @@ public class ApiController {
   @PostMapping("/clientes") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('PERM_clientes.crear')") public ClientResponse createClient(@Valid @RequestBody ClientRequest r){return api.createClient(r);}
   @GetMapping("/clientes/autocomplete") @PreAuthorize("hasAuthority('PERM_clientes.ver')") public List<AutocompleteResponse> clientAuto(@RequestParam String q){return api.clientAutocomplete(q);}
   @GetMapping("/clientes/{id}") @PreAuthorize("hasAuthority('PERM_clientes.ver')") public ClientResponse client(@PathVariable UUID id){return api.client(id);}
+  @GetMapping("/clientes/{id}/datos-completos") @PreAuthorize("hasAuthority('PERM_clientes.completar_datos')") public ClientCompletionResponse clientCompletion(@PathVariable UUID id){return api.clientCompletion(id);}
+  @PatchMapping("/clientes/{id}/datos-completos") @PreAuthorize("hasAuthority('PERM_clientes.completar_datos')") public ClientCompletionResponse completeClientData(@PathVariable UUID id,@Valid @RequestBody ClientCompletionRequest r){return api.completeClientData(id,r);}
   @PutMapping("/clientes/{id}") @PreAuthorize("hasAuthority('PERM_clientes.editar')") public ClientResponse client(@PathVariable UUID id,@Valid @RequestBody ClientRequest r){return api.updateClient(id,r);}
   @DeleteMapping("/clientes/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('PERM_clientes.eliminar')") public void clientDelete(@PathVariable UUID id){api.deleteClient(id);}
 
@@ -96,6 +98,7 @@ public class ApiController {
   @GetMapping("/fichas/{id}/trabajos") @PreAuthorize("hasAuthority('PERM_fichas.ver')") public List<FichaTrabajoResponse> fichaTrabajos(@PathVariable UUID id){return api.ficha(id).trabajos();}
   @PostMapping("/fichas/{id}/trabajos") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('PERM_fichas.editar')") public FichaResponse addTrabajo(@PathVariable UUID id,@Valid @RequestBody FichaTrabajoRequest r){return api.addTrabajo(id,r);}
   @PutMapping("/fichas/{id}/trabajos/{trabajoId}") @PreAuthorize("hasAuthority('PERM_fichas.editar')") public FichaResponse updateTrabajo(@PathVariable UUID id,@PathVariable UUID trabajoId,@Valid @RequestBody FichaTrabajoRequest r){return api.updateTrabajo(id,trabajoId,r);}
+  @PostMapping("/fichas/{id}/trabajos/marcar-todos") @PreAuthorize("hasAuthority('PERM_fichas.marcar_trabajos')") public FichaResponse fichaTrabajosMarcarTodos(@PathVariable UUID id){return api.markAllTrabajosDone(id);}
   @DeleteMapping("/fichas/{id}/trabajos/{trabajoId}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('PERM_fichas.editar')") public void trabajoDelete(@PathVariable UUID id,@PathVariable UUID trabajoId){api.deleteTrabajo(id,trabajoId);}
   @PatchMapping("/fichas/{id}/trabajos/{trabajoId}/estado") @PreAuthorize("hasAuthority('PERM_fichas.editar')") public FichaResponse trabajoState(@PathVariable UUID id,@PathVariable UUID trabajoId,@Valid @RequestBody StateRequest r){return api.trabajoState(id,trabajoId,r);}
 
@@ -135,9 +138,11 @@ public class ApiController {
   // ---------- Configuración ----------
   @GetMapping("/configuracion/trabajos") @PreAuthorize("hasAuthority('PERM_trabajos.ver')") public List<TrabajoCatalogoResponse> trabajos(@RequestParam(required=false)String q, @RequestParam(required=false)Boolean activo, @RequestParam(defaultValue="false")boolean includeDeleted){return api.trabajos(q,activo,includeDeleted);}
   @GetMapping("/configuracion/trabajos/autocomplete") @PreAuthorize("hasAuthority('PERM_trabajos.ver')") public List<TrabajoCatalogoResponse> trabajosAutocomplete(@RequestParam(defaultValue="") String q){return api.trabajosAutocomplete(q);}
+  @GetMapping("/configuracion/trabajos/sugerencias") @PreAuthorize("hasAuthority('PERM_trabajos.ver')") public List<TrabajoSugerenciaResponse> trabajosSugerencias(){return api.trabajosSugerencias();}
   @PostMapping("/configuracion/trabajos") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('PERM_trabajos.crear')") public TrabajoCatalogoResponse createTrabajo(@Valid @RequestBody TrabajoCatalogoRequest r){return api.createTrabajo(r);}
   @PutMapping("/configuracion/trabajos/{id}") @PreAuthorize("hasAuthority('PERM_trabajos.editar')") public TrabajoCatalogoResponse updateTrabajo(@PathVariable UUID id, @Valid @RequestBody TrabajoCatalogoRequest r){return api.updateTrabajoCatalogo(id,r);}
   @DeleteMapping("/configuracion/trabajos/{id}") @ResponseStatus(HttpStatus.NO_CONTENT) @PreAuthorize("hasAuthority('PERM_trabajos.eliminar')") public void deleteTrabajo(@PathVariable UUID id){api.deleteTrabajoCatalogo(id);}
+  @GetMapping("/tipo-cambio/dolar") @PreAuthorize("hasAuthority('PERM_fichas.crear') or hasAuthority('PERM_fichas.editar')") public List<ExchangeRateResponse> exchangeRates(){return api.exchangeRates();}
   @GetMapping("/configuracion/controles") @PreAuthorize("hasAuthority('PERM_controles.ver')") public List<ControlResponse> controls(@RequestParam(defaultValue="false")boolean includeDeleted){return api.controls(includeDeleted);}
   @PostMapping("/configuracion/controles") @ResponseStatus(HttpStatus.CREATED) @PreAuthorize("hasAuthority('PERM_controles.crear')") public ControlResponse control(@Valid @RequestBody ControlRequest r){return api.createControl(r);}
   @PutMapping("/configuracion/controles/{id}") @PreAuthorize("hasAuthority('PERM_controles.editar')") public ControlResponse control(@PathVariable UUID id,@Valid @RequestBody ControlRequest r){return api.updateControl(id,r);}

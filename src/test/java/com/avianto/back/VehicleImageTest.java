@@ -18,7 +18,7 @@ class VehicleImageTest {
   private static final byte[] WEBP = {'R', 'I', 'F', 'F', 0, 0, 0, 0, 'W', 'E', 'B', 'P'};
   private static final byte[] JPEG = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF, (byte) 0xE0, 0, 0};
   private final DataRepository db = mock(DataRepository.class);
-  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class));
+  private final ApiService api = new ApiService(db, mock(PasswordEncoder.class), mock(ExchangeRateService.class));
 
   @Test
   void storesMiniaturaAndCompletaAsBase64AndSetsTheVersion() {
